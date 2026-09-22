@@ -84,30 +84,34 @@ faceSize < 0.25      -> mid
 otherwise            -> near
 ```
 
-### `src/hooks/useConversation.ts`
+### `src/hooks/useConversation.ts` + `src/hooks/conversation/`
 
-Conversation pipeline.
+Conversation pipeline (split 2026-09-22).
 
-Responsibilities:
+`useConversation.ts` responsibilities:
 - Owns conversation state: `idle`, `listening`, `thinking`, `speaking`.
 - Opens microphone on `startConversation()`.
 - Runs a browser-side volume-threshold VAD loop.
 - Records speech with `MediaRecorder`.
-- Sends audio to Groq Whisper.
-- Falls back to local STT server if Groq STT fails.
-- Filters common Whisper hallucinations and no-speech results.
-- Sends user text to Groq chat completions with streaming enabled.
-- Falls back to Ollama if Groq chat fails.
-- Splits streaming LLM output by sentence and queues TTS before full completion.
-- Sends TTS to AivisSpeech.
-- Falls back to Web Speech API if AivisSpeech fails.
+- Orchestrates STT → LLM → TTS and sentence-level TTS queue.
+- Sends TTS to AivisSpeech, falls back to Web Speech API on playback failure.
 - Emits action tags for `Avatar`, currently `[nod]` and `[surprise]`.
 - Nudges the visitor after long silence.
 
+`conversation/stt.ts`:
+- VAD thresholds, Whisper hallucination / no-speech filters.
+- Groq Whisper → local STT fallback (`transcribeBlob`).
+
+`conversation/llm.ts`:
+- `SYSTEM_PROMPT`, nudge lines, action-tag helpers, sentence split.
+- Groq streaming → Ollama fallback (`streamGroqChat` / `fetchOllamaChat`).
+
+`conversation/tts.ts`:
+- AivisSpeech synthesis only (`synthesizeAivis`). Playback stays in the hook.
+
 Important coupling:
-- VAD, STT, LLM, TTS, log state, conversation history, and action tags live in one hook.
-- Provider selection is embedded in this file rather than abstracted.
-- API shapes are mixed directly into UI runtime logic.
+- Provider fallbacks now live in `conversation/*` but are still not abstract runtime states.
+- UI log/history state remains in the hook.
 
 ### `src/components/Avatar.tsx`
 
@@ -168,10 +172,10 @@ Responsibilities:
 | Capability | Primary | Fallback | Location |
 | --- | --- | --- | --- |
 | Face detection | MediaPipe FaceLandmarker | none | `useFaceDetection.ts` |
-| STT | Groq Whisper `whisper-large-v3` | local `stt_server.py` | `useConversation.ts` |
-| LLM | Groq `llama-3.3-70b-versatile` | Ollama `gemma4:e4b` | `useConversation.ts` |
+| STT | Groq Whisper `whisper-large-v3` | local `stt_server.py` | `conversation/stt.ts` |
+| LLM | Groq `qwen/qwen3.6-27b` | Ollama `gemma4:e4b` | `conversation/llm.ts` |
 | Vision comment | Groq `llama-4-scout` | skip comment | `visionComment.ts` |
-| TTS | AivisSpeech | Web Speech API | `App.tsx`, `useConversation.ts` |
+| TTS | AivisSpeech | Web Speech API | `App.tsx`, `useConversation.ts` / `conversation/tts.ts` |
 | 3D avatar | Three.js + VRM | none | `Avatar.tsx` |
 
 ## Design Boundaries To Create Next
@@ -197,7 +201,7 @@ These are not implemented yet. They are the natural next boundaries for Phase 2+
 ## Known Architecture Debt
 
 - `Avatar.tsx` is a god component. It mixes state transitions, animation math, rendering, and behavior policy.
-- `useConversation.ts` mixes provider code, browser audio, VAD, chat state, TTS playback, and UI logs.
+- `useConversation.ts` still owns VAD orchestration, chat state, TTS playback, and UI logs (provider code moved to `conversation/*`).
 - `App.tsx` owns too much orchestration and uses timer-based polling every 150ms.
 - There are two TTS implementations with similar AivisSpeech logic.
 - Fallbacks exist, but they are not surfaced as explicit runtime states.

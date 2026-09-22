@@ -108,7 +108,7 @@ const IDLE_GESTURE_CHANCE = 0.4;
 const IDLE_GESTURE_TAGS = ["stretch", "nod", "tilt"] as const;
 
 // 「意味のある徘徊」: 完全ランダムな徘徊点の代わりに、低確率でこの2つの目的地(窓/プラント)
-// のどちらかへ向かわせる（NEXT.md「徘徊を意味のある行動に変える」参照）。
+// のどちらかへ向かわせる（docs/history.md「徘徊を意味のある行動に変える」参照）。
 export type WanderAnchorKey = "window" | "plant";
 // 実際に歩いて行ける床座標(WANDER_BOUNDS内)。窓はWindow.tsxのWIN_POS(x=0,z=-1.98)の手前・
 // 徘徊範囲の奥ギリギリ(zMin付近)。プラントは実物(コメント上部参照、x=1.82,z=-1.78=範囲外の

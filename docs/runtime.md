@@ -94,17 +94,6 @@ curl http://localhost:11434/api/tags
 
 ### 3. Start Local STT Fallback
 
-Current helper:
-
-```bash
-./start-fallback.sh
-```
-
-It:
-- Starts `stt_server.py` if port `8000` is free.
-- Checks whether Ollama responds.
-- Writes STT logs to `/tmp/mirage-stt.log`.
-
 Manual start:
 
 ```bash

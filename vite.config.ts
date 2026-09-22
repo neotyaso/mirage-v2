@@ -20,7 +20,6 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/ollama/, ""),
         },
         // ローカルSTTサーバー（オフライン用フォールバック。今はGroqを優先）
-        // NOTE: "/stt" だと "/stt-test.html" にもプレフィックスマッチして502になるため trailing slash 付きにする
         "/stt/": {
           target: "http://localhost:8000",
           changeOrigin: true,

@@ -1,16 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { MOCK_INTERACTIONS } from "./components/constants";
+import { StatusCard } from "./components/StatusCard";
+import { InteractionTable } from "./components/InteractionTable";
 
 export default function Home() {
-  const [status, setStatus] = useState("OFFLINE");
+  const latest = MOCK_INTERACTIONS[0];
 
   return (
-    <div>
-      <h1>MIRAGE Studio</h1>
-      <p className="bg-black text-white">
-        Mirage #001 — <button type="button" onClick={() => setStatus((current) => current === "OFFLINE" ? "ONLINE" : "OFFLINE")}>{status}</button>
-      </p>
-    </div>
+    <>
+      <StatusCard
+        zone={latest.zone}
+        phase={latest.phase}
+        attention={latest.attention}
+        conversation={latest.conversation}
+        action={latest.action}
+      />
+      <InteractionTable interactions={MOCK_INTERACTIONS} />
+    </>
   );
 }

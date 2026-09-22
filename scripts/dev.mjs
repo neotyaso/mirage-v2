@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * mirage one-shot launcher (Windows / M1 Mac 共通)。
- * vite(:5173) + local STT(:8000) を起動する。backend(:8002)は廃止のため警告のみ。
+ * vite(:5173) + local STT(:8000) を起動する。
  * - viteは即起動する。STTは裏で温め、準備できたらログに出す
  * - 既にヘルス応答があるサービスは再利用する (ホットスタンバイ)
- * - STT/backendの起動失敗は警告に格下げし、viteは止めない (フォールバック低下運用)
+ * - STTの起動失敗は警告に格下げし、viteは止めない (フォールバック低下運用)
  * - AivisSpeech/Ollama は外部アプリ前提のため警告のみ
  *
  * env:
@@ -23,7 +23,6 @@ const isWin = process.platform === "win32";
 
 const VITE_URL = "http://localhost:5173/";
 const STT_URL = "http://localhost:8000/health";
-const BACKEND_URL = "http://localhost:8002/health";
 const AIVIS_URL = "http://localhost:10101/speakers";
 const OLLAMA_URL = "http://localhost:11434/api/tags";
 const GROQ_URL = "http://localhost:5173/groq/openai/v1/models";
@@ -32,7 +31,6 @@ const GROQ_URL = "http://localhost:5173/groq/openai/v1/models";
 export const SERVICE_URLS = {
   vite: VITE_URL,
   stt: STT_URL,
-  backend: BACKEND_URL,
   aivis: AIVIS_URL,
   ollama: OLLAMA_URL,
   groq: GROQ_URL,
@@ -131,20 +129,11 @@ async function ensureStt() {
   }
 }
 
-async function ensureBackend() {
-  // moshi-backend廃止に伴い警告のみ。Gemini Liveはブラウザ直結、Groq経路はbackend不要
-  if (await health(BACKEND_URL)) {
-    console.log("[ OK ] backend (:8002) 応答あり (使用しない)");
-    return;
-  }
-  console.log("[ -- ] backendなし (不要。moshi-backendは廃止予定)");
-}
-
 async function main() {
   console.log("mirage startup check");
 
-  // STT/backendは裏で温める (viteをブロックしない)。失敗は警告に格下げ
-  const warming = [ensureStt(), ensureBackend()].map((p) =>
+  // STTは裏で温める (viteをブロックしない)。失敗は警告に格下げ
+  const warming = [ensureStt()].map((p) =>
     p.catch((err) => {
       console.error(`[ WARN ] ${err.message} (フォールバック低下で継続)`);
     }),

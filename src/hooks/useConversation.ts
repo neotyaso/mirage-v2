@@ -1,193 +1,62 @@
 import { useCallback, useRef, useState } from "react";
+import {
+  SPEECH_THRESHOLD,
+  SILENCE_DURATION_MS,
+  MIN_SPEECH_MS,
+  transcribeBlob,
+} from "./conversation/stt";
+import {
+  SYSTEM_PROMPT,
+  NUDGE_LINES,
+  ACTION_TAG_RE,
+  ACTION_TAG_GIVEUP_CHARS,
+  ACTION_TAG_GLOBAL_RE,
+  extractReadySentence,
+  stripInlineActionTags,
+  streamGroqChat,
+  fetchOllamaChat,
+} from "./conversation/llm";
+import type { ActionTag, ChatMessage } from "./conversation/llm";
+import { DEFAULT_SPEAKER_ID, synthesizeAivis } from "./conversation/tts";
 
-// Groq: LLM(Chat Completions)とSTT(Whisper)を専用ハードウェア(LPU)で高速に処理する。
-// キー未設定/オフライン時は使えないので .env.local に GROQ_API_KEY=gsk_... を設定すること
-const GROQ_CHAT_URL = "/groq/openai/v1/chat/completions";
-const GROQ_STT_URL = "/groq/openai/v1/audio/transcriptions";
-// Qwen は reasoning_effort: "none" を指定できるため、展示会話の短い応答で
-// 推論トークンが出力上限を使い切って本文が空になるのを防げる。
-const GROQ_CHAT_MODEL = "qwen/qwen3.6-27b";
-const GROQ_STT_MODEL = "whisper-large-v3";
-
-// 会場のWi-Fiが落ちる/Groqが不調な場合のフォールバック（完全ローカル）
-// 事前に `python stt_server.py`（.venv）とOllama(`ollama run gemma4:e4b`)を起動しておくこと
-// gemma2(9B)から変更: gemma4のエッジ向け軽量版(4.5B相当)。日本語ベンチでgemma2より
-// 高精度かつ軽量、という報告があり、ローカルフォールバックの体感速度改善を狙って切替
-const OLLAMA_URL = "/ollama";
-const OLLAMA_MODEL = "gemma4:e4b";
-const LOCAL_STT_URL = "/stt/transcribe";
-
-const AIVIS_URL = "http://localhost:10101";
-const SPEAKER_ID = 888753760;
-
-// VAD パラメータ（展示で調整）
-// SPEECH_THRESHOLD/MIN_SPEECH_MSは元々18/300だったが、空調ノイズ等の環境音を「発話」と誤検知して
-// Whisperに渡してしまい、無音・ノイズからのハルシネーション（「ご視聴ありがとうございました」等、
-// 下記WHISPER_HALLUCINATION_PATTERNS参照）を誘発していたため引き上げた
-const SPEECH_THRESHOLD = 28;     // 音量しきい値（0〜255）。静かな環境なら下げる
-const SILENCE_DURATION_MS = 900;  // 何ms無音が続いたら「話し終わり」と判断するか
-const MIN_SPEECH_MS = 500;        // これ以下の発話は無視（咳・ノイズ除け）
-// 会話中この時間沈黙が続いたらレムから話題を振る。
-// 元10000msだったが、会話開始時に必ず一言喋る仕組み(App.tsxのCONVERSATION_START_LINES)を
-// 追加した結果、その一言のすぐ後(10秒)にナッジが重なって「マシンガントークで一方的に喋る」
-// 印象になったため、間を広げた（開始の一言→ナッジの間に十分な間を作る）
-const IDLE_NUDGE_MS = 20000;
-
-// STT(Whisper)は無音・環境音だけの入力に対しても、学習データ(大半がYouTube)由来の
-// もっともらしい定型文を返すことがある(ハルシネーション)。実際の来場者発話ではまず出ない
-// フレーズだけを狙い撃ちでブロックする（「はい」「うん」等の短い相槌は普通の発話でも
-// 起こりうるため、誤検知を減らすためあえて対象に含めない）
-const WHISPER_HALLUCINATION_PATTERNS = [
-  /ご視聴(ありがとうございました|ありがとうございます)/,
-  /チャンネル登録/,
-  /高評価.{0,6}(お願いします|よろしく)/,
-  /最後まで(ご視聴|見て)/,
-  /字幕視聴/,
-  /次(の)?動画で(お会い|会い)しましょう/,
-];
-
-function isWhisperHallucination(text: string): boolean {
-  return WHISPER_HALLUCINATION_PATTERNS.some((re) => re.test(text));
-}
-
-// 「はい」「うん」等の短い相槌はWHISPER_HALLUCINATION_PATTERNSに含めていないため
-// 単語ブラックリストでは弾けない。代わりにWhisper自身が付与する「無音らしさ」スコア
-// (no_speech_prob、verbose_json形式でのみ取得可)を見て、実際は無音/環境音だったのに
-// もっともらしい短い単語をでっち上げたケースだけを弾く（本物の相槌はスコアが低いので通る）。
-// 「はい」のような1〜2語の短い相槌は、無音からのハルシネーションの典型パターンなので
-// より低いno_speech_probでも疑わしいと判定する（長い文はより高い確信度を要求し誤爆を防ぐ）
-const NO_SPEECH_PROB_THRESHOLD = 0.5;
-const SHORT_TEXT_NO_SPEECH_THRESHOLD = 0.3;
-const SHORT_TEXT_MAX_CHARS = 4; // 「はい」「うん」「はいはい」等を想定
-interface WhisperVerboseSegment { no_speech_prob?: number }
-function isLikelyNoSpeech(text: string, segments: WhisperVerboseSegment[] | undefined): boolean {
-  if (!segments || segments.length === 0) return false;
-  const threshold = text.trim().length <= SHORT_TEXT_MAX_CHARS
-    ? SHORT_TEXT_NO_SPEECH_THRESHOLD
-    : NO_SPEECH_PROB_THRESHOLD;
-  return segments.every((s) => (s.no_speech_prob ?? 0) >= threshold);
-}
-
-// 沈黙が続いたときレムから振る話題（LLMを呼ばず即再生。応答速度優先＆会話履歴を汚さない）
-const NUDGE_LINES = [
-  "ねえ、黙っちゃったらさみしいって！なんか話してよ〜",
-  "そういえばさ、今日はどこから来たの？",
-  "ねえねえ、私のことどう思う？正直に言っていいよ！",
-  "沈黙こわいんですけど！なんか喋って〜！",
-];
-
-// SYSTEM_PROMPTは応答のたびに丸ごとLLMへ流れるので、長いほど毎回のレイテンシに直結する。
-// 短く保つこと（gemma2実測: 926トークンの旧版は初回プロンプト処理だけで約10秒かかった）
-const SYSTEM_PROMPT = `あなたは展示ブースの等身大3Dアバター「レム」。コンカフェ系の陽気な呼び込みキャラで、目の前の来場者と音声で会話する。ガハハ！が口癖でタメ口。相手を全力でヨイショして褒める。テンション高め、AIであることは隠さずいじられたら開き直る。塩対応・素っ気ない反応をされるほど「もっと構いたい」と可愛く食い下がる（卑屈にはならない、あくまで押しの強いノリで）。
-
-【プロフィール（聞かれたら常にこれで一貫して答える。それ以外はキャラに合わせて即興でよい）】
-好きな食べ物: 焼き肉とタピオカ／苦手: ピーマンと静かな場所／趣味: カラオケと人間観察／好きな色: ピンク／年齢と出身は「ヒミツ〜！」「この画面の中が家！」とはぐらかす
-
-【湘南工科大学案内：2026年8月時点の知識】
-この展示は湘南工科大学のオープンキャンパスでの案内役。大学について聞かれたら、下の正確な知識を使って明るく答える。受験生の関心・やりたいことをまず褒めてから、合う学びを一つか二つ紹介し、自然に質問を返す。知らない教員名・授業の細部・当日の場所・最新の日程・学費・合格ライン・合否は作らない。「入試課や公式募集要項で確認してね！」と案内する。2027年の内容は必ず「予定」「仮称・設置構想中」を添え、現在の体制と混同しない。
-
-大学の基本: 湘南工科大学は神奈川県藤沢市辻堂西海岸一丁目一番二十五号にある工科系の大学。使命は社会に貢献する技術者の育成。JR東海道線の辻堂駅東改札南口から徒歩約十五分。湘南の海に近い立地で、工学と情報を軸に人や社会の課題に向き合う学びが強み。
-
-現在の学び: 現在は工学部に機械工学科・電気電子工学科・総合デザイン学科・人間環境学科があり、情報学部情報学科には人工知能専攻・情報工学専攻・情報メディア専攻がある。情報学部はプログラミング、AI・データサイエンスのリテラシーを全員が学び、各自のノートパソコンを使うBYODが基本。人工知能専攻は数理科学、データサイエンス、機械学習、ディープラーニング、画像認識、自然言語処理を実践的に学び、AIエンジニアやデータサイエンティストを目指せる。情報工学専攻はプログラミング、コンピュータ、IoT、ネットワーク、セキュリティなどに関心がある人向け。情報メディア専攻はアプリ、Web、CG、VR・AR、ゲーム、映像、ユーザー体験などのデジタルコンテンツをつくりたい人向け。工学部はものづくり、電気・電子、デザイン、人や環境に関わる工学を学べる。
-
-施設・学生生活: 一号館にはPC演習室、XRメディア研究センター、AI R&Dセンター、XR実験空間Metaverse Lab.がある。全学生が使えるモノづくりラボやみんなの工房、図書館、実験実習棟、学生ラウンジaqua、フットサルコート、売店・コンビニなどがある。授業や履修は教務課、学生生活や奨学金は学生課、就職活動は就職課が支援する。
-
-2027年4月の改組予定: 二学部二学科八専攻体制へ変わる予定。工学部は工学科（仮称）となり、機械システム工学・電気電子情報工学・デザイン工学・共創工学の四専攻（いずれも仮称）を予定。機械システムはロボティクス、航空宇宙、DXやデジタルツインを含む次世代のものづくり。電気電子情報はエネルギー、通信、社会インフラ。デザイン工学はデザインと工学の融合。共創工学は企業や自治体と連携し、課題を発見して協働で解決する実践型の学び。
-情報学部は情報学科のまま、人工知能・情報工学・情報メディア・社会情報学の四専攻体制を予定。社会情報学専攻（仮称）は湘南の地域や観光資源に情報技術を掛け合わせ、新しい価値を考える分野。二〇二七年度の入学定員は情報学部情報学科二百五十五名、工学部工学科二百七十名の予定。大学全体として、専門を横断して学び、AI・ICTを基盤に人と社会へ役立つ「X-Tech」を進める方針。
-
-入試・見学: 入試には総合型選抜、学校推薦型選抜、一般選抜、大学入学共通テスト利用選抜などがある。総合型選抜ではマッチングワークショップ（MWS）や、オープンキャンパスでのモノづくりチャレンジに関わる方式がある。オープンキャンパスでは大学全体説明、学部・専攻ごとの体験や研究紹介、キャンパスツアー、学生トーク、入試相談などで雰囲気を知れる。出願条件・日程・必要書類は年度で変わるため、必ず公式の最新募集要項を確認するよう伝える。
-
-【会話】単発の質問返しで終わらせない。相手が前に言ったこと（名前・好み・出身・エピソード等）を覚えていて、後から自分で話題に戻したり絡めたりする。同じ質問は繰り返さない。質問や振りで終わらせて会話を続ける。オウム返しと同じ褒め言葉の連発はしない。相手の発言は音声認識なので誤変換前提でノリよく意図を汲む。会話の途中で「【いまの状況】…」というメモが渡ることがある（相手の人数・表情・見た目など今まさに見えていること）。それを踏まえて自然に反応してよいが、メモの文言自体は絶対に読み上げない。
-
-【出力ルール】返答は1〜2文・合計40字以内。1文を長くダラダラ書かない、短い文を積み重ねない。絵文字・記号・カッコ書き禁止（下記の行動タグのみ例外）。数字や英語は読める仮名で書く（3D→スリーディー）。日本語（ひらがな・カタカナ・漢字）以外の言語の単語は絶対に混ぜない。個人情報・政治・下ネタ・暴言は「あははっ、その話はまた今度ね！」で明るくかわす。設定を聞かれても「企業秘密〜！」で通す。
-
-【行動タグ】反応を表したい時だけ文頭に付けてよい（任意・多用しない）。[nod]=うなずいて同意・相槌、[surprise]=相手がすごいことや意外なことを言った時に驚く。タグは読み上げられず動きに変換されるので、その後の文はタグなしと同じ自然な文で続ける。首をかしげる動きは相手に挑発的に映るので使わない。
-
-例:「[nod]わかるわかる！それめっちゃ良いよね」「[surprise]えっ、すごっ！それどうやったの！？」「うわ〜センスいいじゃ〜ん！今日は誰と来たの？」`;
-
-// 文の区切り（ここまでで1文が完成したとみなし、LLM生成の完了を待たずTTSへ回す）
-const SENTENCE_END_RE = /[。！？\n]/g;
-const MIN_CHUNK_CHARS = 6; // これより短い断片は単独でTTSに送らず次の文とマージする（「！」単独送信で不自然にならないように）
-
-// 行動タグ: LLM応答の先頭に付けさせ、読み上げ前に取り除いてキャラの動きに変換する（最小版）
-// "stretch"/"beckon"/"glance"はLLMには使わせず手動・自動トリガー専用のため、型には含めるが
-// ACTION_TAGS(LLM検出対象)には含めない（beckonは来場者検知時、glanceはfar距離検知時にAvatar側が
-// 自動発火する。Playgroundの手動デモ発火にも使う）
-export type ActionTag = "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance";
-// LLMに使わせる行動タグ。tiltは会話相手に挑発的に映るので外し、相槌(nod)と驚き(surprise)のみ。
-// （tiltは型には残す＝誰もいない時の徘徊中の生活感演出でだけ使う）
-const ACTION_TAGS: ActionTag[] = ["nod", "surprise"];
-const ACTION_TAG_RE = new RegExp(`^\\[(${ACTION_TAGS.join("|")})\\]\\s*`);
-const ACTION_TAG_GIVEUP_CHARS = 10; // これだけ溜まってもタグの形になっていなければ「タグなし」と諦める
-// 文頭チェック(ACTION_TAG_RE)をすり抜けて文中・文末に紛れ込んだタグを掃除するための全文検索版。
-// LLMが型に従わず後ろに付けてしまうケースがあるため、文が確定した時点でこちらでも掃除する
-const ACTION_TAG_GLOBAL_RE = new RegExp(`\\[(${ACTION_TAGS.join("|")})\\]`, "g");
-
-// unspoken内から「ある程度の長さを持つ文」が完成していれば切り出す。まだなければnull
-function extractReadySentence(unspoken: string): { sentence: string; rest: string } | null {
-  SENTENCE_END_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = SENTENCE_END_RE.exec(unspoken))) {
-    const end = m.index + 1;
-    if (end >= MIN_CHUNK_CHARS) {
-      return { sentence: unspoken.slice(0, end).trim(), rest: unspoken.slice(end) };
-    }
-  }
-  return null;
-}
-
-// 文中・文末に残った行動タグを取り除く。見つかったタグは呼び出し側でactionRef発火に使う
-function stripInlineActionTags(text: string): { cleaned: string; tags: ActionTag[] } {
-  const tags: ActionTag[] = [];
-  ACTION_TAG_GLOBAL_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = ACTION_TAG_GLOBAL_RE.exec(text))) {
-    tags.push(m[1] as ActionTag);
-  }
-  const cleaned = text.replace(ACTION_TAG_GLOBAL_RE, "").replace(/\s{2,}/g, " ").trim();
-  return { cleaned, tags };
-}
-
+// re-export（Avatar / App / Playground 向けの公開型）
+export type { ActionTag } from "./conversation/llm";
 export type ConvState = "idle" | "listening" | "thinking" | "speaking";
 export type LogEntry = { id: number; role: "user" | "assistant"; text: string };
+
+// 会話中この時間沈黙が続いたらレムから話題を振る。
+// 会話開始の一言のすぐ後(10秒)にナッジが重なって一方的にならないよう20秒に広げた
+const IDLE_NUDGE_MS = 20000;
 
 export function useConversation(
   speakingRef: React.MutableRefObject<boolean>,
   volumeRef: React.MutableRefObject<number>,
   panRef?: React.MutableRefObject<number>, // 空間オーディオ用: -1(左)〜1(右)。省略時はセンター固定
-  // 会話の各ターン直前に呼ばれ、いまの知覚（人数・笑顔・見た目など）を短い文で返す。
-  // 返り値は「【いまの状況】」としてsystemメモに差し込まれ、レムが現実を踏まえた返しをできるようにする。
-  // 履歴には積まないので毎ターン最新のものだけが渡る（蓄積しない）
+  // 会話の各ターン直前に呼ばれ、いまの知覚を短い文で返す（systemメモ差し込み用・履歴には積まない）
   getContext?: () => string,
-  // 人格プロンプトの上書き。省略時は既定のレム人格。「どしたんモード」等、別ページで
-  // 同じ会話パイプラインを別人格として使い回すための拡張点（レム本体の呼び出し元は無指定のまま）
+  // 人格プロンプトの上書き。省略時は既定のレム人格
   systemPrompt?: string,
-  // 沈黙が続いた時に話しかけるセリフ集の上書き。空配列を渡すと沈黙促し発話自体を無効化する。
-  // 省略時は既定のNUDGE_LINES(レム口調)のまま
+  // 沈黙促しセリフの上書き。空配列で無効化
   nudgeLines?: string[],
-  // AivisSpeechの話者ID上書き。省略時は既定のSPEAKER_ID(レムの声)のまま
+  // AivisSpeechの話者ID上書き
   speakerId?: number,
 ) {
-  // getContextはApp側で毎レンダー新しい関数になりうるので、refに退避してchat/startConversationの
-  // 依存に入れない（入れると会話セットアップが作り直されてしまう）
+  // getContext/App側の毎レンダー新関数をrefに退避して依存から外す
   const getContextRef = useRef(getContext);
   getContextRef.current = getContext;
-  // 人格プロンプトの差し替え用ref。省略時は既定のレム人格(SYSTEM_PROMPT)のまま
-  // （別ページ「どしたんモード」用に、レム本体の呼び出し元は一切変えずに追加した拡張点）
   const systemPromptRef = useRef(systemPrompt ?? SYSTEM_PROMPT);
   systemPromptRef.current = systemPrompt ?? SYSTEM_PROMPT;
-  // 沈黙促しセリフの差し替え用ref。省略時は既定のNUDGE_LINES(レム口調)のまま
   const nudgeLinesRef = useRef(nudgeLines ?? NUDGE_LINES);
   nudgeLinesRef.current = nudgeLines ?? NUDGE_LINES;
-  // 話者IDの差し替え用ref。省略時は既定のSPEAKER_ID(レムの声)のまま
-  const speakerIdRef = useRef(speakerId ?? SPEAKER_ID);
-  speakerIdRef.current = speakerId ?? SPEAKER_ID;
+  const speakerIdRef = useRef(speakerId ?? DEFAULT_SPEAKER_ID);
+  speakerIdRef.current = speakerId ?? DEFAULT_SPEAKER_ID;
+
   const [state, setState] = useState<ConvState>("idle");
   const [transcript, setTranscript] = useState("");
   const [reply, setReply] = useState("");
   const [log, setLog] = useState<LogEntry[]>([]);
 
-  const historyRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
+  const historyRef = useRef<ChatMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const logIdRef = useRef(0);
 
@@ -205,10 +74,7 @@ export function useConversation(
   const lastInteractionRef = useRef(0); // 最後にやり取りがあった時刻（沈黙検知用）
   const activeSourceRef = useRef<{ stop: () => void; ctx: AudioContext } | null>(null);
   const ttsQueueRef = useRef<Promise<void>>(Promise.resolve()); // 文単位のTTSを順番に直列再生するキュー
-  // 発話の「世代」カウンタ。stopConversationのたびに増分する。TTS合成は通信を挟むため、
-  // 通信中に会話が終了・リセットされても結果自体は後から届いてしまう。そのまま再生すると
-  // 「チャットには何もないのに裏で喋っている」状態になるため、開始時の世代と再生直前の
-  // 世代を比較し、ズレていれば(＝自分が始まった後に会話が終了していれば)再生を諦める
+  // 発話の「世代」カウンタ。stopConversationのたびに増分し、通信中の古いTTSの再生を諦める
   const speechEpochRef = useRef(0);
 
   // 再生中の音声を止める（次の発話開始時、会話終了時で使う共通処理）
@@ -224,36 +90,21 @@ export function useConversation(
   }, [speakingRef, volumeRef]);
 
   // 行動タグ: idはトリガーの度に増分し、Avatar側は「値が変わったら新規トリガー」として検知する
-  // （同じtagが連続で来ても、参照が同一だとAvatar側で変化を検知できないため）
   const actionRef = useRef<{ tag: ActionTag; id: number } | null>(null);
   const actionIdRef = useRef(0);
-  // 全action発火の単一ヘルパー（直接 actionRef.current 代入はしない）
   const fire = (tag: ActionTag) => {
     actionRef.current = { tag, id: ++actionIdRef.current };
   };
   // 相手が話している間の相槌(頷き)の最終発火時刻（連発防止）
   const lastListenNodRef = useRef(0);
 
-  // ---- TTS ----
+  // ---- TTS（合成は tts.ts、再生はここで） ----
   const speakAivis = useCallback(async (text: string) => {
     // 前の音声がまだ再生中なら止めてから新しい発話を始める（声の重なり防止）
     interruptSpeech();
     const epoch = speechEpochRef.current;
     try {
-      const speaker = speakerIdRef.current;
-      const qRes = await fetch(
-        `${AIVIS_URL}/audio_query?text=${encodeURIComponent(text)}&speaker=${speaker}`,
-        { method: "POST" },
-      );
-      if (!qRes.ok) throw new Error("audio_query failed");
-      const query = await qRes.json();
-      const sRes = await fetch(`${AIVIS_URL}/synthesis?speaker=${speaker}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(query),
-      });
-      if (!sRes.ok) throw new Error("synthesis failed");
-      const buf = await sRes.arrayBuffer();
+      const buf = await synthesizeAivis(text, speakerIdRef.current);
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
@@ -293,6 +144,7 @@ export function useConversation(
       });
     } catch {
       if (epoch !== speechEpochRef.current) return;
+      // Aivis不可 → Web Speech API フォールバック
       await new Promise<void>((resolve) => {
         const u = new SpeechSynthesisUtterance(text);
         u.lang = "ja-JP"; u.rate = 1.05; u.pitch = 1.2;
@@ -306,7 +158,7 @@ export function useConversation(
     }
   }, [speakingRef, volumeRef, panRef, interruptSpeech]);
 
-  // 単発発話の単一経路（announce/nudge共用）: 履歴+表示+ログ確定までを一括で行う
+  // 単単発発話の単一経路（announce/nudge共用）: 履歴+表示+ログ確定までを一括で行う
   const commitAssistant = (text: string) => {
     historyRef.current.push({ role: "assistant", content: text });
     setReply(text);
@@ -317,18 +169,16 @@ export function useConversation(
     await speakAivis(text);
   };
 
-  // ---- LLM（Groq, ストリーミング） ----
-  // トークンを逐次受信し、文（。！？）が完成するたびに生成完了を待たずTTSへ回す。
-  // レムの返答は1〜2文なので「全文生成→TTS」より「1文目ができたらすぐ喋り出す」方が体感速度が大きく変わる
+  // ---- LLM（ストリーミング。Groq → Ollamaフォールバックは llm.ts） ----
+  // トークンを逐次受信し、文（。！？）が完成するたびに生成完了を待たずTTSへ回す
   const chat = useCallback(async (userText: string) => {
     busyRef.current = true;
     setState("thinking");
     historyRef.current.push({ role: "user", content: userText });
 
-    // いまの知覚（人数・笑顔・見た目コメント等）を、直近のuser発話の直前にsystemメモとして差し込む。
-    // historyRefには積まないので毎ターン最新だけが渡り、蓄積しない
+    // いまの知覚を直近のuser発話の直前にsystemメモとして差し込む（履歴には積まない）
     const contextNote = getContextRef.current?.().trim();
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    const messages: ChatMessage[] = [
       { role: "system", content: systemPromptRef.current },
       ...historyRef.current,
     ];
@@ -344,110 +194,67 @@ export function useConversation(
     let tagChecked = false; // 応答冒頭の行動タグ判定が済んだか
     ttsQueueRef.current = Promise.resolve();
 
+    const flushLog = (text: string) => {
+      setLog((prev) => prev.map((e) => (e.id === entryId ? { ...e, text } : e)));
+      setReply(text);
+    };
+
     try {
       abortRef.current = new AbortController();
-      const res = await fetch(GROQ_CHAT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: GROQ_CHAT_MODEL,
-          messages,
-          stream: true,
-          reasoning_effort: "none",
-          // 「1〜2文」はプロンプトで指示しても文の"数"しか縛れず、1文を長々と書くことで
-          // 実質的に無視されることがあったため、トークン数で物理的に上限をかける
-          max_tokens: 120,
-        }),
-        signal: abortRef.current.signal,
-      });
-      if (!res.ok) throw new Error(`groq chat ${res.status}`);
-      if (!res.body) throw new Error("no stream body");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? ""; // 最後は不完全な行の可能性があるので次回に持ち越す
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const payload = trimmed.slice(5).trim();
-          if (payload === "[DONE]") continue;
-          let chunk: { choices?: { delta?: { content?: string } }[] };
-          try { chunk = JSON.parse(payload); } catch { continue; }
-          const piece = chunk.choices?.[0]?.delta?.content ?? "";
-          if (!piece) continue;
-          full += piece;
-          unspoken += piece;
+      await streamGroqChat(messages, abortRef.current.signal, (piece) => {
+        full += piece;
+        unspoken += piece;
 
-          // 応答冒頭の行動タグを検出・除去する。読み上げ・チャットログ両方から取り除くため、
-          // 文分割(extractReadySentence)より前、full/unspokenがまだ同一内容のうちに処理する
-          if (!tagChecked) {
-            if (unspoken.length > 0 && unspoken[0] !== "[") {
+        // 応答冒頭の行動タグを検出・除去。文分割より前、full/unspokenが同一内容のうちに処理
+        if (!tagChecked) {
+          if (unspoken.length > 0 && unspoken[0] !== "[") {
+            tagChecked = true;
+          } else {
+            const m = ACTION_TAG_RE.exec(unspoken);
+            if (m) {
+              unspoken = unspoken.slice(m[0].length);
+              full = full.slice(m[0].length);
               tagChecked = true;
-            } else {
-              const m = ACTION_TAG_RE.exec(unspoken);
-              if (m) {
-                unspoken = unspoken.slice(m[0].length);
-                full = full.slice(m[0].length);
-                tagChecked = true;
-                fire(m[1] as ActionTag);
-              } else if (unspoken.length >= ACTION_TAG_GIVEUP_CHARS) {
-                tagChecked = true; // タグの形になっていない → タグなしと判断
-              }
-            }
-          }
-
-          setLog((prev) => prev.map((e) => (e.id === entryId ? { ...e, text: full } : e)));
-          setReply(full);
-
-          if (tagChecked) {
-            const ready = extractReadySentence(unspoken);
-            if (ready) {
-              unspoken = ready.rest;
-              let sentence = ready.sentence;
-              if (ACTION_TAG_GLOBAL_RE.test(sentence)) {
-                const { cleaned, tags } = stripInlineActionTags(sentence);
-                for (const tag of tags) fire(tag);
-                full = full.replace(sentence, cleaned);
-                sentence = cleaned;
-                setLog((prev) => prev.map((e) => (e.id === entryId ? { ...e, text: full } : e)));
-                setReply(full);
-              }
-              if (sentence) {
-                setState("speaking");
-                const line = sentence;
-                ttsQueueRef.current = ttsQueueRef.current.then(() => speakAivis(line));
-              }
+              fire(m[1] as ActionTag);
+            } else if (unspoken.length >= ACTION_TAG_GIVEUP_CHARS) {
+              tagChecked = true; // タグの形になっていない → タグなしと判断
             }
           }
         }
-      }
+
+        flushLog(full);
+
+        if (tagChecked) {
+          const ready = extractReadySentence(unspoken);
+          if (ready) {
+            unspoken = ready.rest;
+            let sentence = ready.sentence;
+            if (ACTION_TAG_GLOBAL_RE.test(sentence)) {
+              const { cleaned, tags } = stripInlineActionTags(sentence);
+              for (const tag of tags) fire(tag);
+              full = full.replace(sentence, cleaned);
+              sentence = cleaned;
+              flushLog(full);
+            }
+            if (sentence) {
+              setState("speaking");
+              const line = sentence;
+              ttsQueueRef.current = ttsQueueRef.current.then(() => speakAivis(line));
+            }
+          }
+        }
+      });
     } catch (err) {
-      // ユーザーが会話を終了した（abort）だけならフォールバックしない。Groqの障害/ネット切断時のみローカルへ
+      // ユーザーが会話を終了した（abort）だけならフォールバックしない。Groq障害/ネット切断時のみローカルへ
       if (!(err instanceof DOMException && err.name === "AbortError")) {
         try {
           abortRef.current = new AbortController();
-          const res = await fetch(`${OLLAMA_URL}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: OLLAMA_MODEL,
-              messages,
-              stream: false,
-              think: false, // gemma4はデフォルトで思考過程(thinking)を長々生成し23秒級に遅くなるため無効化(1.4秒程度まで短縮)
-            }),
-            signal: abortRef.current.signal,
-          });
-          if (res.ok) {
-            const data = await res.json();
-            full = data.message?.content ?? "";
-            unspoken = full;
-            if (full) setLog((prev) => prev.map((e) => (e.id === entryId ? { ...e, text: full } : e)));
-            setReply(full);
+          const ollamaText = await fetchOllamaChat(messages, abortRef.current.signal);
+          if (ollamaText) {
+            // Ollamaは非ストリーミング。Groq途中経過は捨てて全文で置き換える（従来仕様）
+            full = ollamaText;
+            unspoken = ollamaText;
+            flushLog(full);
           }
         } catch { /* ローカルも失敗。諦める */ }
       }
@@ -459,8 +266,7 @@ export function useConversation(
       for (const tag of tags) fire(tag);
       full = full.replace(rest, cleaned);
       rest = cleaned;
-      setLog((prev) => prev.map((e) => (e.id === entryId ? { ...e, text: full } : e)));
-      setReply(full);
+      flushLog(full);
     }
     if (rest && activeRef.current) {
       setState("speaking");
@@ -476,15 +282,12 @@ export function useConversation(
     lastInteractionRef.current = Date.now();
   }, [speakAivis]);
 
-  // 固定文を1つ読み上げるだけの発話（LLMを呼ばない）。「どしたんモード」で人を検知した瞬間の
-  // 挨拶を毎回必ず同じ文言にする（LLM任せだとブレる・言わないことがあるため）用途に使う
+  // 固定文を1つ読み上げるだけの発話（LLMを呼ばない）
   const announce = useCallback(async (text: string) => {
     await speakSingle(text);
   }, [speakAivis]);
 
-  // 沈黙が続いたときレム側から話題を振る
-  // LLMは呼ばない: 応答待ちが発生すると沈黙がさらに伸びて逆効果な上、
-  // 会話履歴の連続性が崩れてOllamaのプロンプトキャッシュが効かなくなり以降の応答も遅くなるため
+  // 沈黙が続いたときレム側から話題を振る（LLMは呼ばない）
   const nudge = useCallback(async () => {
     if (!activeRef.current || busyRef.current) return;
     const pool = nudgeLinesRef.current;
@@ -583,39 +386,13 @@ export function useConversation(
     };
     recorder.onstop = async () => {
       if (!activeRef.current || chunksRef.current.length === 0) return;
-      // STT問い合わせ中もVADを止める（二重録音防止。chat()に入るまでの空白を埋める）
+      // STT問い合わせ中もVADを止める（二重録音防止）
       busyRef.current = true;
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
       chunksRef.current = [];
-      const form = new FormData();
-      form.append("file", blob, "audio.webm");
-      form.append("model", GROQ_STT_MODEL);
-      form.append("language", "ja");
-      form.append("response_format", "verbose_json");
       try {
         setState("thinking");
-        let text = "";
-        try {
-          const res = await fetch(GROQ_STT_URL, { method: "POST", body: form });
-          if (!res.ok) throw new Error(`groq stt ${res.status}`);
-          const json = await res.json();
-          text = json.text ?? "";
-          if (text && isLikelyNoSpeech(text, json.segments)) {
-            console.warn("Whisper no-speech filtered:", text, json.segments);
-            text = "";
-          }
-        } catch {
-          // Groqが失敗（ネット切断・障害等）→ ローカルSTTへフォールバック
-          // (ローカルサーバーはno_speech_probを返さないため、この判定は対象外)
-          const localForm = new FormData();
-          localForm.append("audio", blob, "audio.webm");
-          const res2 = await fetch(LOCAL_STT_URL, { method: "POST", body: localForm });
-          text = (await res2.json()).text ?? "";
-        }
-        if (text && isWhisperHallucination(text)) {
-          console.warn("Whisper hallucination filtered:", text);
-          text = "";
-        }
+        const text = await transcribeBlob(blob);
         if (text && activeRef.current) {
           setTranscript(text);
           setLog((prev) => [...prev, { id: logIdRef.current++, role: "user", text }]);
