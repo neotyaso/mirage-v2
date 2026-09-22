@@ -23,12 +23,19 @@
   - 表情・モーションはクラウドGPUのtext-to-motionを別サービスとして接続
   - mirageからfork/cloneしない。完全に空のリポから始める
 - **移行ルール**
-  - mdはコピーで新規リポの`docs/`へ（mirage側は残す。moveではない）
+  - mdはコピーで新規リポの`docs/`へ（mirage側は残す。moveではない）← **実際はクローンで履歴ごと移ったのでこの作業は不要になった**
   - コード借用は必要な時点でそのファイルだけコピー。最初から抽象化・共有パッケージ化しない
   - mirageのHEADは今のまま凍結方向。削除済みデモ（gemini-lab等）は復活させない＝履歴と現在を乖離させない
 - **未決**
-  - 新規リポ名
+  - ~~新規リポ名~~ → **`mirage-v2`** に決定。 https://github.com/neotyaso/mirage-v2 （PUBLIC、mirage履歴込みでpush済み）
   - GPU text-to-motionの手段（自前推論 or Replicate/RunPod等の借り物）
+
+## ★ 明日からの最初の作業（mirage-v2側）
+
+1. `C:\プログラミング\mirage-v2` をエディターで開き直し（このopencodeセッションはmirage用）
+2. いらないとこの削除: Groq/Ollama/ローカルSTT分岐、フォールバック経路、展示まわり（ゲートウェイ・実験用html等）
+3. Gemini一本に畳んだ後、クラウドGPU text-to-motion手段の調査・選定
+4. 決定事項をコミット＆pushしてから本編
 
 ## ★ 次回やること（優先順）
 
