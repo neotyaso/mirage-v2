@@ -9,8 +9,9 @@ import { Ambience } from "./components/Ambience";
 import { generateVisionComment } from "./vision/visionComment";
 import { useFaceDetection, getDistanceZone, ZONE_THRESHOLDS, adjustZoneThreshold, resetZoneThresholds } from "./hooks/useFaceDetection";
 import type { FaceCenter, DistanceZone } from "./hooks/useFaceDetection";
-import { useConversation } from "./hooks/useConversation";
 import { useGeminiLive } from "./hooks/useGeminiLive";
+import { useLocalConversation } from "./hooks/useLocalConversation";
+import { isLocalSttSupported } from "./hooks/conversation/stt";
 import { createInitialInteractionState, transitionInteraction } from "./state/interactionMachine";
 import type { InteractionEvent, InteractionTransition } from "./state/interactionMachine";
 import type { MutableRefObject } from "react";
@@ -20,32 +21,6 @@ const CAM_BASE: [number, number, number] = [0, 1.1, 3];
 const CAM_RANGE_X = 0.8; // 顔が端にいると左右±0.8m動く
 const CAM_RANGE_Y = 0.35;
 const CAM_LERP = 0.06; // 追従の滑らかさ（小さいほど遅れる）
-
-type Engine = "groq" | "gemini";
-
-// スタート画面とデバッグパネルのエンジン切替UIを統一。見た目は呼び出し側の
-// baseStyle/activeBg/inactiveBgで保つため、ここではボタンの並びだけ作る
-function EngineSwitch({ engine, baseStyle, activeBg, inactiveBg, onSelect }: {
-  engine: Engine;
-  baseStyle: CSSProperties;
-  activeBg: string;
-  inactiveBg: string;
-  onSelect: (e: Engine) => void;
-}) {
-  return (
-    <>
-      {(["groq", "gemini"] as const).map((e) => (
-        <button
-          key={e}
-          style={{ ...baseStyle, background: engine === e ? activeBg : inactiveBg }}
-          onClick={() => onSelect(e)}
-        >
-          {e === "groq" ? "Groq" : "Gemini"}
-        </button>
-      ))}
-    </>
-  );
-}
 
 function OffAxisCamera({ faceCenterRef }: { faceCenterRef: MutableRefObject<FaceCenter | null> }) {
   const { camera } = useThree();
@@ -187,38 +162,16 @@ const SPEAKER_ID = 888753760;
 export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
-  const panRef = useRef(0); // 空間オーディオ: -1(左)〜1(右)。来場者の画面上の左右位置に追従
 
-  // 顔検知は会話コンテキストより先に用意する（getConversationContextが下のrefを読むため）
   const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, faceYawRef, allFaceCentersRef, allEyeCentersRef, expressionRef, ready: camReady, error: camError } =
     useFaceDetection();
 
-  // 直近の視覚コメント（見た目の一言）。会話LLMに「見た目」を文脈として渡し、会話の中で
-  // 自然に触れさせるために保持する。来場者が離脱したらクリアして次の人に持ち越さない
-  const lastVisionCommentRef = useRef("");
+  // 行動タグ(手招き等)をApp側から発火する用。Avatarはidの変化で新規トリガーを判定する
+  const actionRef = useRef<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>(null);
+  function fireAction(tag: "nod" | "tilt" | "beckon") {
+    actionRef.current = { tag, id: -Date.now() };
+  }
 
-  // 会話の各ターン直前に呼ばれ、いまの知覚を短い文にする（人数・笑顔・見た目）。
-  // レムが「二人で来たんだね」「お、笑ってくれた」等、現実を踏まえた返しをできるようにする。
-  // refだけ読むので依存は空でよい
-  const getConversationContext = useCallback(() => {
-    const parts: string[] = [];
-    const n = faceCountRef.current;
-    if (n >= 2) parts.push(`来場者は${n}人で一緒に来ている`);
-    if ((expressionRef.current?.smile ?? 0) >= 0.3) parts.push("相手は今えがお");
-    const vc = lastVisionCommentRef.current;
-    if (vc) parts.push(`あなたは相手の見た目を見て既に「${vc}」と声をかけた。同じ言葉は繰り返さず、必要なら会話の流れの中で自然にその見た目の話題に触れてよい`);
-    return parts.join("。");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const { state: convState, log, startConversation, stopConversation, resetHistory, actionRef } = useConversation(speakingRef, volumeRef, panRef, getConversationContext);
-
-  // エンジン切替: "gemini"=メイン(S2S) / "groq"=フォールバック用パイプライン。
-  // useGeminiLive側の追加契約(log/resetTranscript/metrics)は別担当が実装中のため、
-  // ここでは契約名で参照しつつ未実装でも落ちない防御フォールバックを付ける.
-  const [engine, setEngine] = useState<Engine>("gemini");
-  const engineRef = useRef<Engine>("gemini");
-  useEffect(() => { engineRef.current = engine; }, [engine]);
   type GeminiContract = ReturnType<typeof useGeminiLive> & Partial<{
     log: { id: number; role: "user" | "assistant"; text: string }[];
     resetTranscript: () => void;
@@ -226,32 +179,64 @@ export default function App() {
   }>;
   const geminiRaw = useGeminiLive() as GeminiContract;
   const geminiState = geminiRaw.state;
-  const geminiLog = geminiRaw.log ?? [];
-  const geminiMetrics: { connectMs: number | null; firstAudioMs: number | null; turns: number; disconnects: number } =
-    geminiRaw.metrics ?? { connectMs: null, firstAudioMs: null, turns: 0, disconnects: 0 };
+  const geminiMetrics = geminiRaw.metrics ?? { connectMs: null, firstAudioMs: null, turns: 0, disconnects: 0 };
   const geminiResetTranscript = geminiRaw.resetTranscript ?? (() => {});
   const geminiActive = geminiState !== "disconnected" && geminiState !== "error";
-  // チャットUI・離脱判定はエンジン側のログに一本化
-  const displayLog = engine === "gemini" ? geminiLog : log;
-  // interactionMachine用にGemini状態を会話状態へ写像
-  const geminiConvState = geminiState === "speaking" ? "speaking" : geminiState === "connecting" ? "thinking" : geminiActive ? "listening" : "idle" as const;
-  const activeConvState = engine === "gemini" ? geminiConvState : convState;
 
-// M2堅牢化: Gemini→Groq自動フォールバック（橋渡し側のみ。hook本体の変更は禁止）。
-// 発動条件: キー未設定・connect失敗・error状態・会話中の異常切断。
-  // 指数バックオフ(1s,2s)で最大3回リトライし、ダメならGroqに切替えて会話継続する。
-  // 切断カウンタは既存metrics.disconnectsを再利用（重複実装なし）。
-  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  // エンジン: gemini=本線 (S2S), local=ローカル会話 (Web Speech STT + Ollama + speak())
+  // テスト: http://localhost:5173/?engine=local でフォールバックを強制
+  const [engine, setEngine] = useState<"gemini" | "local">(
+    new URLSearchParams(location.search).get("engine") === "local" ? "local" : "gemini",
+  );
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
+
+  // speak定義より後で実体を差し込む（フックはspeak生成前に呼ぶ必要があるため）
+  const speakRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const local = useLocalConversation(useCallback((t: string) => speakRef.current(t), []));
+  const localRef = useRef(local);
+  localRef.current = local;
+  // 離脱/一時停止時に pending の local.start() を打ち消す用
+  const localWantedRef = useRef(false);
+
+  const displayLog = engine === "local" ? local.log : geminiRaw.log ?? [];
+  // interactionMachine用に会話エンジン状態を会話状態へ写像
+  const activeConvState =
+    engine === "local"
+      ? local.state
+      : geminiState === "speaking"
+        ? "speaking"
+        : geminiState === "connecting"
+          ? "thinking"
+          : geminiActive
+            ? "listening"
+            : ("idle" as const);
+
+  function startLocalConv() {
+    if (localWantedRef.current) return;
+    localWantedRef.current = true;
+    // 開始一言(speak)がマイクに漏れるので再生完了後にlisten開始
+    void waitUntilNotSpeaking(8000).then(() => {
+      if (localWantedRef.current) localRef.current.start();
+    });
+  }
+
+  function stopLocalConv(reset: boolean) {
+    localWantedRef.current = false;
+    localRef.current.stop();
+    if (reset) localRef.current.reset();
+  }
+
+  // 接続リトライ: キー未設定・connect失敗・error状態・会話中の異常切断。
+  // 指数バックオフ(1s,2s)で最大3回。失敗時はローカル会話へ自動切替。
+  const [failureNotice, setFailureNotice] = useState<string | null>(null);
   const geminiFailCountRef = useRef(0);
   const geminiRetryingRef = useRef(false);
-  const geminiIntentionalRef = useRef(false); // 離脱・停止・切替時の意図的disconnectを異常と誤認しない用
+  const geminiIntentionalRef = useRef(false); // 離脱・停止時の意図的disconnectを異常と誤認しない用
   const prevDisconnectsRef = useRef(geminiMetrics.disconnects);
   const geminiMetricsRef = useRef(geminiMetrics);
   geminiMetricsRef.current = geminiMetrics;
 
-  // App側speak()(Aivis AudioContext)の後始末。hook外の橋渡し補完として
-  // フォールバック/切替時に呼び出す（useGeminiLive側のdisconnect後始末はhook内に既存のため触らない）。
-  // activeSourceRefは下で宣言されるが、呼び出しはレンダー後のイベント/effectからのみなのでTDZ問題なし。
   function stopAppAudio() {
     if (activeSourceRef.current) {
       try { activeSourceRef.current.stop(); } catch { /* already stopped */ }
@@ -263,47 +248,41 @@ export default function App() {
     volumeRef.current = 0;
   }
 
-  // geminiIntentionalRef=true→disconnect→setTimeout(1000)の定型を1箇所に統一。
-  // disconnectは呼び出し側から受け取る（ref経由と直接参照が混在するため）。
-  // 呼ばない分岐でもフラグのon/offは揃えるためdisconnectなしでも呼べる
   function intentionalGeminiDisconnect(disconnect?: () => void) {
     geminiIntentionalRef.current = true;
     if (disconnect) { try { disconnect(); } catch { /* ignore */ } }
     setTimeout(() => { geminiIntentionalRef.current = false; }, 1000);
   }
 
-  function doFallbackToGroq(reason: string) {
-    if (engineRef.current !== "gemini") return;
-    intentionalGeminiDisconnect(() => geminiRaw.disconnect());
-    stopAppAudio();
-    geminiFailCountRef.current = 0;
-    geminiRetryingRef.current = false;
-    setFallbackNotice(reason);
-    setEngine("groq");
-    // 会話継続: Groq経路を起動（失敗しても画面は残る）
-    void startConversation().catch(() => {});
-  }
-
   async function connectGeminiRobust() {
-    if (engineRef.current !== "gemini" || geminiRetryingRef.current) return;
-    if (geminiRaw.state !== "disconnected" && geminiRaw.state !== "error") return; // 接続中・接続済みは何もしない
+    if (geminiRetryingRef.current) return;
+    if (geminiRaw.state !== "disconnected" && geminiRaw.state !== "error") return;
     geminiRetryingRef.current = true;
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           await geminiConnectRef.current();
           geminiFailCountRef.current = 0;
+          setFailureNotice(null);
+          if (engineRef.current === "local") {
+            stopLocalConv(true);
+            setEngine("gemini");
+          }
           return;
         } catch (e) {
           geminiFailCountRef.current++;
           console.error(`[Gemini] connect failed (attempt ${attempt + 1}/3):`, e);
           if (attempt < 2) {
             await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt)); // 1s, 2s
-            if (engineRef.current !== "gemini") return;
           }
         }
       }
-      doFallbackToGroq(`Gemini接続に3回失敗したためGroqに切替 (disconnects=${geminiMetricsRef.current.disconnects})`);
+      if (isLocalSttSupported()) {
+        setFailureNotice(`Gemini接続に3回失敗 → ローカル会話へ切替 (disconnects=${geminiMetricsRef.current.disconnects})`);
+        setEngine("local");
+      } else {
+        setFailureNotice(`Gemini接続に3回失敗 & このブラウザはSTT非対応 (disconnects=${geminiMetricsRef.current.disconnects})`);
+      }
     } finally {
       geminiRetryingRef.current = false;
     }
@@ -311,13 +290,12 @@ export default function App() {
   const connectGeminiRobustRef = useRef(() => Promise.resolve());
   connectGeminiRobustRef.current = connectGeminiRobust;
 
-  // Avatar連携: Gemini選択中かつセッション有効時のみ speakingRef/volumeRef を橋渡し。
+  // セッション有効時のみ speakingRef/volumeRef を橋渡し。
   // disconnected/error時は触らない（開始・別れの一言のspeak()=Aivis駆動のリップシンクを殺さないため）。
-  // 行動タグ(nod等)の移植は対象外のため、actionRefはGroq側のまま流用しない。
   const geminiMicLevel = geminiRaw.micLevel;
   const geminiOutLevel = geminiRaw.outLevel;
   useEffect(() => {
-    if (engine !== "gemini" || !geminiActive) return;
+    if (!geminiActive) return;
     if (geminiState === "speaking") {
       speakingRef.current = true;
       volumeRef.current = geminiOutLevel;
@@ -325,13 +303,14 @@ export default function App() {
       speakingRef.current = false;
       volumeRef.current = geminiMicLevel * 0.3;
     }
-  }, [engine, geminiActive, geminiState, geminiMicLevel, geminiOutLevel]);
+  }, [geminiActive, geminiState, geminiMicLevel, geminiOutLevel]);
 
-  // M2: Geminiのerror状態・異常切断を検知してリトライ経路へ回す。
+  // error状態・異常切断を検知してリトライ経路へ回す。
   // 意図的disconnectはhook側でattemptが進むためmetrics.disconnectsが増えないが、
-  // 念のためgeminiIntentionalRefでも除外する。計数は既存disconnectsのみ。
+  // 念のためgeminiIntentionalRefでも除外する。
   useEffect(() => {
-    if (engine !== "gemini" || geminiRetryingRef.current) {
+    if (engine === "local") return; // ローカル会話中は自動再接続しない（バナーの手動復帰のみ）
+    if (geminiRetryingRef.current) {
       prevDisconnectsRef.current = geminiMetrics.disconnects;
       return;
     }
@@ -348,25 +327,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, geminiState, geminiMetrics.disconnects]);
 
-  // エンジン切替時は旧エンジン側を止める（両方のマイク/音声が同時に走らないように）
-  function switchEngine(next: Engine) {
-    if (next === engineRef.current) return;
-    if (convState !== "idle") stopConversation();
-    if (geminiActive) intentionalGeminiDisconnect(() => geminiRaw.disconnect());
-    else intentionalGeminiDisconnect();
-    stopAppAudio();
-    geminiFailCountRef.current = 0;
-    geminiRetryingRef.current = false;
-    if (next === "gemini") setFallbackNotice(null); // 手動で戻す＝フォールバック解除
-    setEngine(next);
-  }
-
-  // 行動タグ(頷く/首かしげる/手招き)をApp側からも発火する共通ヘルパー。
-  // idは負のタイムスタンプにして、useConversation内部のLLMタグ検出が使う正の連番と衝突させない
-  // （Avatarは値の変化=idの差でしか新規トリガーを判定しないので、正負が混ざっても問題ない）
-  function fireAction(tag: "nod" | "tilt" | "beckon") {
-    actionRef.current = { tag, id: -Date.now() };
-  }
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const [started, setStarted] = useState(false);
@@ -512,6 +472,7 @@ export default function App() {
       speakFallback(text);
     }
   }
+  speakRef.current = speak;
 
   // speakingRef.current が false になる（今の発話が終わる）まで待つ。呼び込みの直後に見た目コメントを
   // 続けて喋らせたい時、その場の一発チェックだと「呼び込みがまだ再生中」なら丸ごと諦めてしまう
@@ -588,10 +549,6 @@ export default function App() {
       setCurFaceSize(faceSizeRef.current);
       dispatchInteraction({ type: "FACE_UPDATED", zone: z, present: p, nowMs: performance.now() });
 
-      // 空間オーディオ: 来場者の画面上の左右位置に合わせて声のパンを更新（OffAxisCameraと同じ符号規則）
-      const fc = faceCenterRef.current;
-      panRef.current = fc ? (fc.x - 0.5) * 2 : 0;
-
       // プロクセミクス反応: ゆっくり来る→何もしない、急に来る→驚くセリフ。
       // 距離の"量"でなく"来かた"（変化速度）だけを見る
       {
@@ -654,14 +611,11 @@ export default function App() {
                 generateVisionComment(videoRef.current).then(async (comment) => {
                   visionBusyRef.current = false;
                   if (!comment) return;
-                  // 会話LLMが後の会話ターンで見た目に触れられるよう、喋る/喋らないに関わらず保持する
-                  lastVisionCommentRef.current = comment;
                   // 呼び込みがまだ再生中なら、喋り終わるまで待ってから続ける（二段構えを確実に成立させる。
                   // 待たずにその場でspeakingRef.currentを見るだけだと、呼び込みがまだ鳴っている間は
                   // 毎回諦めて無言になってしまう）
                   await waitUntilNotSpeaking(8000);
-                  // まだ在席・会話未開始なら、つかみとして声に出す（会話が始まっていれば
-                  // 割り込まず、代わりに上のlastVisionCommentRef経由で会話の中に自然に混ぜる）
+                  // まだ在席・会話未開始なら、つかみとして声に出す
                   if (!paused && presentRef.current && convStateRef.current === "idle") {
                     speak(comment);
                     lastCall.current = performance.now();
@@ -671,7 +625,7 @@ export default function App() {
             }
           } else if (z === "far" && now - lastCall.current > COOLDOWN[z] && now - lastCall.current > 1500) {
             // 気づき済み後もfarのまま粘る来場者にだけ、クールダウンで呼び込みを繰り返す。
-            // mid/nearは会話が自動で始まる/再開する(下のstartConversationの分岐)ので、
+            // mid/nearは会話が自動で始まる/再開するので、
             // ここで改めて「ねえねえ」系の呼び込みを繰り返す必要はない
             callOut(z);
             lastCall.current = now;
@@ -681,7 +635,7 @@ export default function App() {
       wasPresent.current = p;
 
       // 視線を外すと構う: mid/near で来場者と向き合ってる最中にそっぽを向かれたら反応する。
-      // 喋ってる最中・LLM応答中に割り込まないよう !speakingRef.current && convState !== "thinking" で守る
+      // 喋ってる最中・LLM応答中に割り込まないよう !speakingRef.current && activeConvState !== "thinking" で守る
       if (
         started && !paused &&
         (z === "mid" || z === "near") &&
@@ -711,11 +665,14 @@ export default function App() {
           // 「近づいたのに何も起きない＝壊れてる？」と感じられてしまう。会話開始の瞬間は必ず
           // 一言喋って「聞く態勢に入った」ことを分かりやすくする（呼び込みの通常クールダウンとは別枠）
           // Gemini側も同じ枠組み: 開始の一言(speak流用=Zephyr化対象外)＋connectで会話開始
-          speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
-          if (engineRef.current === "gemini") {
-            void connectGeminiRobustRef.current();
+          if (engineRef.current === "local") {
+            if (!localWantedRef.current) {
+              speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
+              startLocalConv();
+            }
           } else {
-            startConversation();
+            speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
+            void connectGeminiRobustRef.current();
           }
         }
         if (activeConvState !== "idle" && performance.now() - lastPresentAtRef.current > AWAY_TIMEOUT_MS) {
@@ -723,25 +680,20 @@ export default function App() {
           // 呼び込みだけで素通りされた時にまで「またね」と言うと不自然なので
           if (hasLogRef.current) {
             speak(FAREWELL_LINES[Math.floor(Math.random() * FAREWELL_LINES.length)]);
-            // 名残惜しそうに手を振って見送る。stopConversation後はconversingが切れるので、
+            // 名残惜しそうに手を振って見送る。切断後はconversingが切れるので、
             // beckon再生中(約2.5秒)はAvatarが正面を向いて固まる＝手を振りながらの見送りになる
             fireAction("beckon");
           }
-          if (engineRef.current === "gemini") {
-            intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
-            geminiResetRef.current();
-          } else {
-            stopConversation();
-            resetHistory();
-          }
-          lastVisionCommentRef.current = ""; // 見た目メモは次の来場者に持ち越さない
+          stopLocalConv(true);
+          intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
+          geminiResetRef.current();
           silentResumeRef.current = true;
         }
       }
     }, 150);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started, paused, activeConvState, engine]);
+  }, [started, paused, activeConvState]);
 
   function handleStart() {
     setStarted(true);
@@ -752,9 +704,6 @@ export default function App() {
     // 全画面APIはユーザー操作(このボタン押下)を起点にしないと拒否されるため、ここで呼ぶ
     document.documentElement.requestFullscreen?.().catch(() => {});
   }
-
-  // 会話中の相槌は「相手が話し始めたら頷く」形で useConversation の VAD 側から発火する。
-  // 首をかしげる動きは相手に挑発的に映るため、会話中には使わない（以前の考え中→首かしげは撤去）。
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
@@ -784,7 +733,7 @@ export default function App() {
       {/* 環境音（小音量）。稼働中のみ。展示スタートのクリックが音声解放を兼ねる */}
       <Ambience active={started && !paused} />
 
-      {/* 会話ログ（左側に流れるチャット。Gemini選択時はGeminiのlogを表示） */}
+      {/* 会話ログ（左側に流れるチャット） */}
       {started && displayLog.length > 0 && (
         <div style={chatLogStyle}>
           {displayLog.map((entry) => (
@@ -797,12 +746,12 @@ export default function App() {
         </div>
       )}
 
-      {/* M2: フォールバック発生の明示表示（HUDとは別に常時可視）。手動でGeminiに戻せる */}
-      {started && fallbackNotice && (
+      {/* 接続失敗の明示表示（HUDとは別に常時可視） */}
+      {started && failureNotice && (
         <div style={fallbackBannerStyle}>
-          <span>⚠ {fallbackNotice}</span>
-          <button style={fallbackBackBtnStyle} onClick={() => switchEngine("gemini")}>
-            Geminiに戻す
+          <span>⚠ {failureNotice}</span>
+          <button style={fallbackBackBtnStyle} onClick={() => { void connectGeminiRobustRef.current(); }}>
+            Geminiへ復帰
           </button>
         </div>
       )}
@@ -832,16 +781,6 @@ export default function App() {
           <button style={{ ...startBtnStyle, position: "static", transform: "none" }} onClick={handleStart}>
             ▶ 展示スタート
           </button>
-          {/* エンジン切替（開始画面。デフォルトは既存Groq） */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <EngineSwitch
-              engine={engine}
-              baseStyle={engineBtnStyle}
-              activeBg="#8b5cf6"
-              inactiveBg="rgba(55,65,81,0.85)"
-              onSelect={(e) => { if (e === "gemini") setFallbackNotice(null); setEngine(e); }}
-            />
-          </div>
         </div>
       ) : debugMode ? (
         <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 8 }}>
@@ -860,14 +799,12 @@ export default function App() {
                 setPaused(true);
                 dispatchInteraction({ type: "APP_PAUSED" });
                 // 呼び込み/驚き等のセリフ(speak())がAivisSpeechで再生中の場合、
-                // stopConversation()はuseConversation側の音声しか止めないため、
-                // App.tsx自前のactiveSourceRefも明示的に止める必要がある
+                // Gemini側の後始末だけでは止まらないため明示的に止める
                 stopAppAudio();
-                if (engineRef.current === "gemini") {
-                  if (geminiActive) {
-                    intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
-                  }
-                } else if (convState !== "idle") stopConversation();
+                stopLocalConv(false);
+                if (geminiActive) {
+                  intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
+                }
               }
             }}
           >
@@ -880,30 +817,20 @@ export default function App() {
       {started && debugMode && (
         <div style={convPanelStyle}>
           <div style={{ marginBottom: 8, display: "flex", gap: 8, justifyContent: "center" }}>
-            {/* エンジン切替（デバッグ用。HUDはpointer-events:noneのため操作系はここに置く） */}
-            <EngineSwitch
-              engine={engine}
-              baseStyle={convBtnStyle}
-              activeBg="#8b5cf6"
-              inactiveBg="#374151"
-              onSelect={switchEngine}
-            />
-          </div>
-          <div style={{ marginBottom: 8, display: "flex", gap: 8, justifyContent: "center" }}>
             <button
               style={{ ...convBtnStyle, background: activeConvState === "idle" ? "#8b5cf6" : "#ef4444" }}
               onClick={() => {
-                if (engine === "gemini") {
-                  if (!geminiActive) {
+                if (engine === "local") {
+                  if (localWantedRef.current) stopLocalConv(false);
+                  else {
                     speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
-                    void connectGeminiRobustRef.current();
-                  } else {
-                    intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
+                    startLocalConv();
                   }
-                } else if (convState === "idle") {
-                  startConversation();
+                } else if (!geminiActive) {
+                  speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
+                  void connectGeminiRobustRef.current();
                 } else {
-                  stopConversation();
+                  intentionalGeminiDisconnect(() => geminiDisconnectRef.current());
                 }
               }}
             >
@@ -912,8 +839,8 @@ export default function App() {
             <button
               style={{ ...convBtnStyle, background: "#374151" }}
               onClick={() => {
-                if (engine === "gemini") geminiResetRef.current();
-                else resetHistory();
+                stopLocalConv(true);
+                geminiResetRef.current();
               }}
             >
               🔄 会話リセット
@@ -926,19 +853,17 @@ export default function App() {
         <div style={hudStyle}>
           <div>
             cam: {camError ? `ERR ${camError}` : camReady ? "ok" : "…"} | 在席:{" "}
-            {present ? "YES" : "no"} | 顔: {faces} | zone: {zone} | conv: {convState} | {!started ? "停止中" : paused ? "一時停止中" : "稼働中"}
+            {present ? "YES" : "no"} | 顔: {faces} | zone: {zone} | conv: {activeConvState} | {!started ? "停止中" : paused ? "一時停止中" : "稼働中"}
           </div>
           <div style={{ marginTop: 2, opacity: 0.85 }}>
-            engine: {engine}{engine === "gemini" ? ` | gemini: ${geminiState} | via: ${geminiRaw.via || "-"}` : ""} | gconv: {activeConvState}
+            engine: {engine} | gemini: {geminiState} | via: {geminiRaw.via || "-"} | local: {local.state}
           </div>
-          {engine === "gemini" && (
-            <div style={{ marginTop: 2, opacity: 0.85 }}>
-              m: connectMs={geminiMetrics.connectMs ?? "-"} | firstAudioMs={geminiMetrics.firstAudioMs ?? "-"} | turns={geminiMetrics.turns} | disconnects={geminiMetrics.disconnects}
-            </div>
-          )}
-          {fallbackNotice && (
+          <div style={{ marginTop: 2, opacity: 0.85 }}>
+            m: connectMs={geminiMetrics.connectMs ?? "-"} | firstAudioMs={geminiMetrics.firstAudioMs ?? "-"} | turns={geminiMetrics.turns} | disconnects={geminiMetrics.disconnects}
+          </div>
+          {failureNotice && (
             <div style={{ marginTop: 2, color: "#fbbf24" }}>
-              fallback: {fallbackNotice}
+              fail: {failureNotice}
             </div>
           )}
           <div style={{ marginTop: 2, opacity: 0.85 }}>
@@ -1001,14 +926,6 @@ const convBtnStyle: CSSProperties = {
   ...btnBase,
   padding: "10px 20px",
   fontSize: 14,
-  borderRadius: 8,
-  fontWeight: "bold",
-};
-
-const engineBtnStyle: CSSProperties = {
-  ...btnBase,
-  padding: "8px 18px",
-  fontSize: 13,
   borderRadius: 8,
   fontWeight: "bold",
 };

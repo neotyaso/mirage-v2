@@ -1,14 +1,13 @@
-// 「私、あなたが見えてるよ」演出: webカメラの1フレームをGroqのvisionモデルに投げ、
+// 「私、あなたが見えてるよ」演出: webカメラの1フレームをGemini visionモデルに投げ、
 // 来場者の見た目に対する気の利いた一言を生成する。
 //
-// プライバシー: 画像はメモリ上で縮小してGroqに送るだけで、保存も再送もしない。
+// プライバシー: 画像はメモリ上で縮小してGeminiに送るだけで、保存も再送もしない。
 // 送るのは小さいJPEG1枚のみ。実会場で使うならブース内にカメラ利用の掲示をするのが望ましい。
 //
-// キーは vite.config.ts の /groq プロキシがサーバー側で付与するのでここには出てこない。
-// GROQ_CHAT_URL は useConversation.ts と同じエンドポイント（OpenAI互換 chat/completions）。
-const GROQ_CHAT_URL = "/groq/openai/v1/chat/completions";
-// マルチモーダル対応の現行Groqモデル。会話モデルと合わせて運用する。
-const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
+// キーは VITE_GEMINI_API_KEY のブラウザ直結（useGeminiLive と同じ。展示デモ割り切り）。
+import { GoogleGenAI } from "@google/genai";
+
+const VISION_MODEL = "gemini-3.5-flash";
 
 // コメントできる要素が無い/人がちゃんと写っていない時にモデルに返させる合図。
 // これが返ったら「言わない」（外した薄いコメントを無理に喋らせない＝確信度ガード）
@@ -55,29 +54,25 @@ export async function generateVisionComment(video: HTMLVideoElement | null): Pro
   const dataUrl = captureFrame(video);
   if (!dataUrl) return null;
   try {
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: GROQ_VISION_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: VISION_PROMPT },
-              { type: "image_url", image_url: { url: dataUrl } },
-            ],
-          },
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    if (!apiKey) return null;
+    const ai = new GoogleGenAI({ apiKey });
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const res = await ai.models.generateContent({
+      model: VISION_MODEL,
+      contents: [{
+        role: "user",
+        parts: [
+          { text: VISION_PROMPT },
+          { inlineData: { mimeType: "image/jpeg", data: base64 } },
         ],
-        stream: false,
-        reasoning_effort: "none",
+      }],
+      config: {
         temperature: 0.9,
-        max_tokens: 60,
-      }),
+        maxOutputTokens: 60,
+      },
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const raw: string = data.choices?.[0]?.message?.content ?? "";
+    const raw = res.text ?? "";
     return sanitizeVisionComment(raw);
   } catch {
     return null;

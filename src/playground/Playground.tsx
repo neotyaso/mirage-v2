@@ -7,7 +7,6 @@ import type { BeckonPose, GlanceParams, AnchorGazeParams, WanderAnchorKey } from
 import { Room } from "../components/Room";
 import { useFaceDetection, getDistanceZone } from "../hooks/useFaceDetection";
 import type { DistanceZone, FaceCenter, FaceExpression } from "../hooks/useFaceDetection";
-import { useConversation } from "../hooks/useConversation";
 import { generateVisionComment } from "../vision/visionComment";
 
 // アニメーション・会話を手動/実カメラ/実会話で試せる試験用ページ。
@@ -96,7 +95,7 @@ export function Playground() {
   const [camFaces, setCamFaces] = useState(0);
 
   // 視覚コメント（「私、見えてるよ」）の手動テスト。カメラONで自分を映して押すと、
-  // Groq visionが返した一言を表示する（本番はApp側で新規来場時に自動発火）
+  // Gemini visionが返した一言を表示する（本番はApp側で新規来場時に自動発火）
   const [visionText, setVisionText] = useState<string>("");
   const [visionLoading, setVisionLoading] = useState(false);
   async function testVision() {
@@ -130,30 +129,13 @@ export function Playground() {
     setCameraOn((v) => !v);
   }
 
-  // ---- 会話(実STT/LLM/TTS) ----
-  const [convOn, setConvOn] = useState(false);
-  const conv = useConversation(speakingRef, volumeRef);
-  const convLogEndRef = useRef<HTMLDivElement>(null);
+  // ---- 会話(擬似フラグのみ。実STT/LLM/TTSはApp本番で) ----
+  const actionRef = useRef<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>(null);
 
-  useEffect(() => {
-    convLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conv.log]);
-
-  // 行動タグ: LLM([nod]/[tilt]タグ由来)と手動ボタンで同じrefを共有する。
-  // 手動分は負のidにして、hook内部の連番(正)と衝突しないようにする
+  // 行動タグ: 手動ボタンで発火。idは負のタイムスタンプにして衝突しないようにする
   // ("stretch"/"glance"はLLMには使わせておらず手動トリガー専用)
   function triggerAction(tag: "nod" | "tilt" | "stretch" | "beckon" | "glance") {
-    conv.actionRef.current = { tag, id: -Date.now() };
-  }
-
-  function toggleConversation() {
-    if (convOn) {
-      conv.stopConversation();
-      setConvOn(false);
-    } else {
-      conv.startConversation();
-      setConvOn(true);
-    }
+    actionRef.current = { tag, id: -Date.now() };
   }
 
   function selectZone(z: DistanceZone) {
@@ -191,8 +173,8 @@ export function Playground() {
             allFaceCentersRef={allFaceCentersRef}
             expressionRef={expressionRef}
             faceSizeRef={faceSizeRef}
-            actionRef={conv.actionRef}
-            conversing={conv.state !== "idle" || fakeConversing}
+            actionRef={actionRef}
+            conversing={fakeConversing}
             beckonPoseRef={beckonPoseRef}
             glanceParamsRef={glanceParamsRef}
             anchorGazeParamsRef={anchorGazeParamsRef}
@@ -251,28 +233,6 @@ export function Playground() {
             {visionText && <span style={{ fontSize: 12, opacity: 0.85 }}>{visionText}</span>}
           </div>
         )}
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>会話（実STT/LLM/TTS）</span>
-          <button onClick={toggleConversation} style={{ ...btnStyle, background: convOn ? "#ef4444" : "#374151" }}>
-            {convOn
-              ? conv.state === "listening" ? "👂 聴いてる…"
-                : conv.state === "thinking" ? "💭 考え中…"
-                : conv.state === "speaking" ? "🔊 喋ってる"
-                : "■ 会話終了"
-              : "🎤 会話開始"}
-          </button>
-          {convOn && (
-            <div style={convLogStyle}>
-              {conv.log.map((entry) => (
-                <div key={entry.id} style={{ opacity: entry.role === "user" ? 0.8 : 1 }}>
-                  <b>{entry.role === "user" ? "あなた" : "レム"}:</b> {entry.text}
-                </div>
-              ))}
-              <div ref={convLogEndRef} />
-            </div>
-          )}
-        </div>
 
         <div style={rowStyle}>
           <span style={labelStyle}>距離ゾーン（歩行トリガー）{cameraOn && "※カメラON中は自動"}</span>
@@ -514,18 +474,4 @@ const btnStyle: CSSProperties = {
   border: "none",
   borderRadius: 6,
   cursor: "pointer",
-};
-
-const convLogStyle: CSSProperties = {
-  marginTop: 4,
-  maxHeight: 140,
-  overflowY: "auto",
-  background: "rgba(0,0,0,0.3)",
-  borderRadius: 6,
-  padding: "6px 8px",
-  fontSize: 11,
-  lineHeight: 1.5,
-  display: "flex",
-  flexDirection: "column",
-  gap: 2,
 };

@@ -1,12 +1,9 @@
 import { SERVICE_URLS, health } from "./dev.mjs";
 
-// URL定義・health/waitForの実体は dev.mjs に一本化。ここでは表示名とtimeoutのみ持つ。
+// URL定義・healthの実体は dev.mjs に一本化。ここでは表示名とtimeoutのみ持つ。
 const checks = [
   { name: "フロントエンド", key: "vite", timeoutMs: 4_000 },
-  { name: "Groq APIプロキシ", key: "groq", timeoutMs: 15_000 },
-  { name: "ローカルSTT", key: "stt", timeoutMs: 4_000 },
   { name: "AivisSpeech", key: "aivis", timeoutMs: 4_000 },
-  { name: "Ollamaフォールバック", key: "ollama", timeoutMs: 4_000 },
 ];
 
 async function checkService(check) {

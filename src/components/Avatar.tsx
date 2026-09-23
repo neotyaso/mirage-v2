@@ -57,13 +57,13 @@ export interface AvatarProps {
   allEyeCentersRef?: MutableRefObject<FaceCenter[]>;
   expressionRef?: MutableRefObject<FaceExpression>;
   faceSizeRef?: MutableRefObject<number>;
-  // 行動タグ(useConversation.ts)。idが変わるたびに新規トリガーとして扱う。
-  // "glance"はLLM/自動トリガーの通常フローには乗らず、Playgroundの手動デモ発火専用
+  // 行動タグ。idが変わるたびに新規トリガーとして扱う。
+  // "glance"は通常フローには乗らず、Playgroundの手動デモ発火専用
   actionRef?: MutableRefObject<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>;
   // デバッグ用「⏸ 停止」ボタンでtrueになる。歩行・接近/徘徊などの移動だけを止めて
   // その場に固まらせる（瞬き・呼吸・リップシンク等の待機アニメは止めない）
   paused?: boolean;
-  // 会話中(convState !== "idle")はtrue。話している最中に来場者の姿勢のわずかな変化で
+  // 会話中(conversing)はtrue。話している最中に来場者の姿勢のわずかな変化で
   // 距離ゾーンがmid/near間を行き来し、勝手に歩き出す/後ずさりするのを防ぐため、
   // 会話中は接近/徘徊の位置更新を止める（頷く等の身振りは止めない）
   conversing?: boolean;
