@@ -5,8 +5,8 @@ import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 import type { VRMAnimation } from "@pixiv/three-vrm-animation";
 import * as THREE from "three";
-import { getDistanceZone } from "../hooks/useFaceDetection";
-import type { FaceCenter, FaceExpression, DistanceZone } from "../hooks/useFaceDetection";
+import { getDistanceZone, estimateDistanceM, distanceToApproach } from "../hooks/useFaceDetection";
+import type { FaceCenter, FaceExpression } from "../hooks/useFaceDetection";
 
 const MODEL_URL = "/avatar/sample.vrm";
 const WALK_URL = "/avatar/walk.vrma";
@@ -38,15 +38,6 @@ function lerpAngle(a: number, b: number, t: number): number {
 function damp(rate60: number, delta: number): number {
   return 1 - Math.pow(1 - rate60, delta * 60);
 }
-// id変化で新規トリガーを検知するforce系refの重複パターンを一本化。消費したらidを進めて値を返す
-function consumeRefTrigger<T extends { id: number }>(ref: MutableRefObject<T | null> | undefined, lastId: MutableRefObject<number>): T | null {
-  const v = ref?.current;
-  if (v && v.id !== lastId.current) {
-    lastId.current = v.id;
-    return v;
-  }
-  return null;
-}
 
 export interface AvatarProps {
   speakingRef?: MutableRefObject<boolean>;
@@ -57,6 +48,8 @@ export interface AvatarProps {
   allEyeCentersRef?: MutableRefObject<FaceCenter[]>;
   expressionRef?: MutableRefObject<FaceExpression>;
   faceSizeRef?: MutableRefObject<number>;
+  // 眼間距離(IPD・正規化幅)。連続接近の距離推定に使う(IPD優先・顔幅fallback)。未指定なら顔幅のみ。
+  eyeDistanceRef?: MutableRefObject<number>;
   // 行動タグ。idが変わるたびに新規トリガーとして扱う。
   // "glance"は通常フローには乗らず、Playgroundの手動デモ発火専用
   actionRef?: MutableRefObject<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>;
@@ -73,21 +66,10 @@ export interface AvatarProps {
   glanceParamsRef?: MutableRefObject<GlanceParams>;
   // 「意味のある徘徊」パラメータのライブ上書き（Playgroundのスライダー用）。未指定ならDEFAULT_ANCHOR_GAZE_PARAMS
   anchorGazeParamsRef?: MutableRefObject<AnchorGazeParams>;
-  // Playground手動デモ発火専用: idが変わるたびに、徘徊中でなくても即座に指定の目的地(窓/プラント)へ
-  // 向かわせる（本番の自動抽選フローには乗らない。チラ見の"glance"手動発火と同じパターン）
-  forceAnchorRef?: MutableRefObject<{ key: WanderAnchorKey; id: number } | null>;
-  // Playground手動デモ発火専用: 気づいた瞬間の体の向きを強制指定してから気づき演出を発火する
-  // （振り向き3パターンをそれぞれ単独でテストできるようにするため）
-  forceNoticeRef?: MutableRefObject<{ tier: "front" | "side" | "back"; id: number } | null>;
 }
 
-// 距離ゾーン別の「接近度」0〜1。ここから Z移動量と前傾を導く
-const ZONE_APPROACH: Record<DistanceZone, number> = {
-  absent: 0,    // 誰もいない → 奥で待機
-  far: 0.15,    // 遠くにいる → まだ奥
-  mid: 0.5,     // 気づいて少し前へ
-  near: 1.0,    // 目の前 → 覗き込む
-};
+// 接近度0〜1は連続値で求める(estimateDistanceM→distanceToApproach、IPD優先・顔幅fallback)。
+// zone分岐(徘徊/far vs mid/near)はトリガー用に残し、目標値だけ連続化して境界振動を消す。
 const APPROACH_LERP = 0.02; // 近づく速さ（小さいほどゆっくり優雅に）
 
 // 体ごとの前後移動は控えめに（大きくすると頭が見切れる）
@@ -259,7 +241,7 @@ export const DEFAULT_GLANCE_PARAMS: GlanceParams = {
 // 複数人いる時に視線を切り替えるインターバル（ms）
 const SCAN_INTERVAL = 2500;
 
-export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, allFaceCentersRef, allEyeCentersRef, expressionRef, faceSizeRef, actionRef, paused, conversing, beckonPoseRef, glanceParamsRef, anchorGazeParamsRef, forceAnchorRef, forceNoticeRef }: AvatarProps) {
+export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, allFaceCentersRef, allEyeCentersRef, expressionRef, faceSizeRef, eyeDistanceRef, actionRef, paused, conversing, beckonPoseRef, glanceParamsRef, anchorGazeParamsRef }: AvatarProps) {
   const [vrm, setVrm] = useState<VRM | null>(null);
   const blinkClock = useRef(0);
   const nextBlink = useRef(2 + Math.random() * 3);
@@ -292,9 +274,6 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, al
   const prevWanderWalking = useRef(true);
   // 現在のwanderTargetが「意味のある目的地」(窓/プラント)かどうか。nullなら従来通りの完全ランダム点
   const wanderAnchor = useRef<WanderAnchorKey | null>(null);
-  // Playgroundの強制デモ発火(forceAnchorRef)の連番。idが変わった時だけ新規トリガーとして扱う
-  const lastForceAnchorId = useRef(0);
-  const lastForceNoticeId = useRef(0);
   const bodyYaw = useRef(0);
   // "head"はVRMのLookAt(視線追従)が毎フレーム上書きするため、代わりに"neck"を使う
   const neckBone = useRef<THREE.Object3D | null>(null);
@@ -488,33 +467,6 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, al
       triggerAction(action.tag);
     }
 
-    // Playground手動デモ発火: 「窓へ」「プラントへ」ボタンで即座に徘徊目標を切り替える。
-    // prevWanderWalkingを立てておくことで、この後の徘徊移動ロジックが「歩いていて今まさに
-    // 到着した」扱いで処理し、到着時の滞在演出(リンガー上書き)を確実に発火させる
-    // （zoneが不在/遠いの時のみ実際に反映される。それ以外は次にwander branchへ戻った時に有効）
-    const forceAnchor = consumeRefTrigger(forceAnchorRef, lastForceAnchorId);
-    if (forceAnchor) {
-      wanderAnchor.current = forceAnchor.key;
-      wanderTarget.current = { ...WANDER_ANCHORS[forceAnchor.key] };
-      prevWanderWalking.current = true;
-    }
-
-    // Playground手動デモ発火: 気づいた瞬間の体の向きを指定の角度に強制してから、
-    // 通常の気づき発火と全く同じ処理(noticeUntil等)を直接叩く。振り向き3パターンを
-    // 個別に呼べるようにするためのデバッグ専用経路（本番の自動発火フローは変更しない）
-    const forceNotice = consumeRefTrigger(forceNoticeRef, lastForceNoticeId);
-    if (forceNotice) {
-      const testYaw = forceNotice.tier === "front" ? Math.PI / 9 // 約20°
-        : forceNotice.tier === "side" ? Math.PI / 2              // 90°
-        : Math.PI * 0.94;                                        // 約170°
-      bodyYaw.current = testYaw;
-      noticeUntil.current = t + NOTICE_DURATION_S;
-      noticeStart.current = t;
-      noticeStartYaw.current = testYaw;
-      noticeCooldownUntil.current = t + NOTICE_COOLDOWN_S;
-      triggerAction("beckon");
-    }
-
     // ジェスチャークリップの再生・重み計算（入り/抜けをフェード、終了したら自動停止）
     let isGesturing = false;
     if (gestureActive.current) {
@@ -567,8 +519,12 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, al
     // 設定し直す。他ブロックに入った時は自然にfalseへ戻る＝refでなくローカル変数で十分）
     let atAnchor = false;
 
-    // 現在の距離ゾーン（気づき演出の検知・接近演出の両方で使う）
-    const zoneNow = getDistanceZone(faceSizeRef?.current ?? 0);
+    // 現在の距離ゾーン（気づき演出の検知・徘徊/far vs mid/nearの分岐に使うトリガー用）
+    // 接近の目標値は離散zoneでなく連続値(approachTargetCont)を使う＝境界振動対策
+    const zoneNow = getDistanceZone(faceSizeRef?.current ?? 0, eyeDistanceRef?.current ?? 0);
+    const approachTargetCont = distanceToApproach(
+      estimateDistanceM(faceSizeRef?.current ?? 0, eyeDistanceRef?.current ?? 0),
+    );
 
     // 「気づき」演出のトリガー: farはまだ「気づいてないフリ(チラ見)」の段階とし、
     // mid/nearまで寄ってきた“その瞬間”に初めて発火する。遠目の人にいきなり手招みして
@@ -656,15 +612,14 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, al
       //   もう大体正面(NOTICE_YAW_FRONT_MAX未満)→体は回さない(下の首ピッチで上目遣いだけ演出)
       //   真後ろ(NOTICE_YAW_BACK_MIN以上)→通常より速く勢いよく振り向く
       //   それ以外(横向き)→従来通りの速さで振り向く
-      approach.current = lerp(approach.current, ZONE_APPROACH[zoneNow], APPROACH_LERP);
+      approach.current = lerp(approach.current, approachTargetCont, APPROACH_LERP);
       const startYaw = noticeStartYaw.current;
       if (startYaw >= NOTICE_YAW_FRONT_MAX) {
         const turnLerp = startYaw >= NOTICE_YAW_BACK_MIN ? NOTICE_TURN_LERP_BACK : NOTICE_TURN_LERP;
         bodyYaw.current = lerpAngle(bodyYaw.current, 0, damp(turnLerp, delta));
       }
       // startYaw < NOTICE_YAW_FRONT_MAX の時はbodyYawを動かさない(体を回さない)が、
-      // rotation.yへの反映自体は毎フレーム必要（Playgroundの強制発火で直前にbodyYawだけ
-      // 書き換えた場合、ここで反映しないと見た目の向きがフリーズしたまま更新されなかったため）
+      // rotation.yへの反映自体は毎フレーム必要
       vrm.scene.rotation.y = bodyYaw.current;
       isWalking = false;
     } else if (isGesturing) {
@@ -734,8 +689,8 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, al
         }
         prevWanderWalking.current = isWalking;
       } else {
-        // 来場者検知中: 正面(中央)へ戻りながら接近演出を行う
-        const approachTarget = ZONE_APPROACH[zone];
+        // 来場者検知中: 正面(中央)へ戻りながら接近演出を行う。目標は連続値(境界振動なし)
+        const approachTarget = approachTargetCont;
         approach.current = lerp(approach.current, approachTarget, APPROACH_LERP);
         const a = approach.current;
         const targetZ = lerp(APPROACH_Z_BACK, APPROACH_Z_FRONT, a);

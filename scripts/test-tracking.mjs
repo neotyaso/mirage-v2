@@ -51,6 +51,7 @@ mustContain("eventLog.ts", "variant", "eventLog の variant 対応");
 // ---- 2. 実物の TS をトランスパイルして読み込む ----
 let trackerSrc = readFileSync(path.join(trackingDir, "visitorTracker.ts"), "utf8");
 let eventLogSrc = readFileSync(path.join(trackingDir, "eventLog.ts"), "utf8");
+let typesSrc = readFileSync(path.join(trackingDir, "types.ts"), "utf8");
 let ts;
 try {
   ts = require("typescript");
@@ -70,6 +71,11 @@ function transpile(name, src) {
 }
 const trackerFile = transpile("visitorTracker", trackerSrc);
 const eventLogFile = transpile("eventLog", eventLogSrc);
+// visitorTracker内の相対import "./types.js" を解決するためtypesも同outDirに同名で書き出す
+const typesOut = ts.transpileModule(typesSrc, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+writeFileSync(path.join(outDir, "types.js"), typesOut);
 const trackerMod = await import(pathToFileURL(trackerFile).href);
 const eventLogMod = await import(pathToFileURL(eventLogFile).href);
 
@@ -110,6 +116,11 @@ const eventLogMod = await import(pathToFileURL(eventLogFile).href);
   const near = t3.update([{ x: 0.5, y: 0.5, size: 0.3 }], 0);
   assert(near.active[0].zones[0].zone === "near", "size 0.3 → near（useFaceDetection と同閾値）");
 
+  // m基準: dありはzoneForDで判定
+  assert(trackerMod.zoneForSize(0.2, 1.0) === "near", "d=1.0 → near");
+  assert(trackerMod.zoneForSize(0.2, 2.0) === "mid", "d=2.0 → mid");
+  assert(trackerMod.zoneForSize(0.2, 5.0) === "far", "d=5.0 → far");
+
   // leave 判定：既定 4000ms 未観測で left に出る
   const t4 = trackerMod.createVisitorTracker();
   t4.update([{ x: 0.5, y: 0.5, size: 0.2 }], 0);
@@ -120,6 +131,28 @@ const eventLogMod = await import(pathToFileURL(eventLogFile).href);
   t5.update([{ x: 0.5, y: 0.5, size: 0.2 }], 0);
   const before = t5.update([], 3999);
   assert(before.left.length === 0 && before.active.length === 1, "猶予内（3999ms）は leave しない");
+
+  // interest: 接近中は離脱中より score が高い
+  const ta = trackerMod.createVisitorTracker();
+  ta.update([{ x: 0.5, y: 0.5, size: 0.2, d: 3 }], 0);
+  ta.update([{ x: 0.5, y: 0.5, size: 0.2, d: 2 }], 500);
+  const ra = ta.update([{ x: 0.5, y: 0.5, size: 0.2, d: 1 }], 1000);
+  const tl = trackerMod.createVisitorTracker();
+  tl.update([{ x: 0.5, y: 0.5, size: 0.2, d: 1 }], 0);
+  tl.update([{ x: 0.5, y: 0.5, size: 0.2, d: 2 }], 500);
+  const rl = tl.update([{ x: 0.5, y: 0.5, size: 0.2, d: 3 }], 1000);
+  assert(ra.active[0].vd < 0, "接近中は vd<0");
+  assert(rl.active[0].vd > 0, "離脱中は vd>0");
+  assert(
+    ra.active[0].interest.score > rl.active[0].interest.score,
+    "接近中の interest.score が離脱中より高い",
+  );
+
+  // interest: 全要素0だと score 0
+  assert(
+    trackerMod.computeInterest({ d: null, vd: 0, dwellS: 0, yaw: 0.8, smile: 0 }) === 0,
+    "全要素0で interest score 0",
+  );
 }
 
 // ---- 4. eventLog の振る舞い ----

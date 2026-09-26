@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
 import { Avatar, DEFAULT_BECKON_POSE, DEFAULT_GLANCE_PARAMS, DEFAULT_ANCHOR_GAZE_PARAMS } from "../components/Avatar";
-import type { BeckonPose, GlanceParams, AnchorGazeParams, WanderAnchorKey } from "../components/Avatar";
+import type { BeckonPose, GlanceParams, AnchorGazeParams } from "../components/Avatar";
 import { Room } from "../components/Room";
 import { useFaceDetection, getDistanceZone } from "../hooks/useFaceDetection";
 import type { DistanceZone, FaceCenter, FaceExpression } from "../hooks/useFaceDetection";
@@ -73,19 +73,6 @@ export function Playground() {
     anchorGazeParamsRef.current = next;
     setAnchorGazeParams(next);
   }
-  // 「窓へ」「プラントへ」ボタンでの強制デモ発火（チラ見の手動発火と同じidパターン）
-  const forceAnchorRef = useRef<{ key: WanderAnchorKey; id: number } | null>(null);
-  function forceAnchor(key: WanderAnchorKey) {
-    forceAnchorRef.current = { key, id: Date.now() };
-  }
-
-  // 気づき演出の振り向き方(3パターン)を個別に呼び分けるデバッグ発火。
-  // 気づいた瞬間の体の向き(noticeStartYaw)を強制的に指定してから気づき演出そのものを発火させる
-  const forceNoticeRef = useRef<{ tier: "front" | "side" | "back"; id: number } | null>(null);
-  function forceNotice(tier: "front" | "side" | "back") {
-    forceNoticeRef.current = { tier, id: Date.now() };
-  }
-
   // コントロールパネルがアバターに被って邪魔な時に隠せるようにする
   const [panelVisible, setPanelVisible] = useState(true);
 
@@ -112,7 +99,7 @@ export function Playground() {
   useEffect(() => {
     if (!cameraOn) return;
     const id = setInterval(() => {
-      const z = getDistanceZone(cam.faceSizeRef.current);
+      const z = getDistanceZone(cam.faceSizeRef.current, cam.eyeDistanceRef.current);
       faceCenterRef.current = cam.faceCenterRef.current;
       allFaceCentersRef.current = cam.allFaceCentersRef.current;
       faceSizeRef.current = cam.faceSizeRef.current;
@@ -178,8 +165,6 @@ export function Playground() {
             beckonPoseRef={beckonPoseRef}
             glanceParamsRef={glanceParamsRef}
             anchorGazeParamsRef={anchorGazeParamsRef}
-            forceAnchorRef={forceAnchorRef}
-            forceNoticeRef={forceNoticeRef}
           />
           <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
@@ -289,17 +274,8 @@ export function Playground() {
           <span style={{ fontSize: 11, opacity: 0.6 }}>
             本番では「不在/遠い」ゾーンで徘徊の目標を選び直すたびchanceの確率で窓かプラントへ
             向かう（残りは従来通りの完全ランダム点）。到着後は通常の徘徊停止より長く留まり、
-            首/胸をその方向へ向ける。下のボタンはこの抽選を待たず今すぐその目的地へ歩かせる
-            （「不在」または「遠い」ゾーンでのみ実際に反映される）
+            首/胸をその方向へ向ける。
           </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => forceAnchor("window")} style={{ ...btnStyle, background: "#374151" }}>
-              🪟 窓へ
-            </button>
-            <button onClick={() => forceAnchor("plant")} style={{ ...btnStyle, background: "#374151" }}>
-              🌿 プラントへ
-            </button>
-          </div>
           {([
             ["chance", "目的地を選ぶ確率", 0, 1],
             ["lingerMinS", "滞在(秒)・最短", 1, 15],
@@ -348,24 +324,6 @@ export function Playground() {
             </button>
             <button onClick={() => triggerAction("tilt")} style={{ ...btnStyle, background: "#374151" }}>
               首をかしげる
-            </button>
-          </div>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>気づき演出（振り向き3パターン。体の向きを強制してから発火）</span>
-          <span style={{ fontSize: 11, opacity: 0.6 }}>
-            気づいた瞬間の体の向きで振り向き方を変えている。3パターンを個別に呼んで首/角度を調整する用
-          </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => forceNotice("front")} style={{ ...btnStyle, background: "#374151" }}>
-              正面(上目遣い)
-            </button>
-            <button onClick={() => forceNotice("side")} style={{ ...btnStyle, background: "#374151" }}>
-              横向き
-            </button>
-            <button onClick={() => forceNotice("back")} style={{ ...btnStyle, background: "#374151" }}>
-              背中向き
             </button>
           </div>
         </div>

@@ -5,15 +5,13 @@ import { ContactShadows } from "@react-three/drei";
 import { Avatar } from "./components/Avatar";
 import { Room } from "./components/Room";
 import { WindowFrame } from "./components/WindowFrame";
-import { Ambience } from "./components/Ambience";
 import { generateVisionComment } from "./vision/visionComment";
-import { useFaceDetection, getDistanceZone, ZONE_THRESHOLDS, adjustZoneThreshold, resetZoneThresholds } from "./hooks/useFaceDetection";
+import { decideCall, CALLOUT_POOLS, groupize } from "./vision/callDecision";
+import { useFaceDetection, getDistanceZone, estimateDistanceM, getDistanceK, getDistanceKipd, calibrateDistanceAt } from "./hooks/useFaceDetection";
 import type { FaceCenter, DistanceZone } from "./hooks/useFaceDetection";
 import { useGeminiLive } from "./hooks/useGeminiLive";
 import { useLocalConversation } from "./hooks/useLocalConversation";
 import { isLocalSttSupported } from "./hooks/conversation/stt";
-import { createInitialInteractionState, transitionInteraction } from "./state/interactionMachine";
-import type { InteractionEvent, InteractionTransition } from "./state/interactionMachine";
 import type { MutableRefObject } from "react";
 
 // Off-axis カメラ: 来場者の顔位置でカメラが動き「3Dの窓」効果を生む
@@ -44,48 +42,8 @@ function OffAxisCamera({ faceCenterRef }: { faceCenterRef: MutableRefObject<Face
   return null;
 }
 
-// 距離ゾーン別セリフ（後でLLM生成に差し替え）
-const LINES: Record<Exclude<DistanceZone, "absent">, string[]> = {
-  far: [
-    "ねえねえ！そこのあなた、こっち来てよ〜！",
-    "おーい！ちょっと話していかない？",
-    "そこの人〜！ちょっとだけこっち見て〜！",
-    "暇なら話そうよ〜！すぐそこにいるからさ！",
-  ],
-  mid: [
-    "あっ、いま目が合ったよね？ちょっとだけいいよね？",
-    "ねえ、ちょっとだけ。すぐ終わるから！",
-    "お、気づいてくれた？もうちょっとこっち来てよ！",
-    "せっかくだし話していきなよ〜！",
-  ],
-  near: [
-    "来てくれたんだ！嬉しいな、話しかけてほしかったんだよね。",
-    "わあ、近い！何か聞きたいことある？",
-    "やった、来てくれた！何から話そっか！",
-    "おー本当に来た！暇してたんだよね、ありがとう！",
-  ],
-};
-
-// 複数人向けセリフ（2人以上検出時に優先）。faceCountRefは「2人以上か」の二値でしか
-// 判定していない(正確な人数は数えていない)ため、3人以上でも不自然にならないよう
-// 「二人」等の具体的な人数を決め打ちした言い回しは避ける
-const GROUP_LINES: Record<Exclude<DistanceZone, "absent">, string[]> = {
-  far: [
-    "おーい！そこの皆さん、こっち来てよ〜！",
-    "ねえねえ！そこの皆さん、ちょっとだけいいですか？",
-    "そこの皆さん〜！一緒に来てよ〜！",
-  ],
-  mid: [
-    "皆さんですか？ちょうどよかった、話しかけたかったんです！",
-    "一緒に来てくれたんだね、嬉しいな！",
-    "みんなでこっち来てよ、待ってたんだ！",
-  ],
-  near: [
-    "わあ、皆さん来てくれたんですね！誰から話そっか。",
-    "いらっしゃい！何か聞きたいことある？",
-    "みんな来てくれてありがとう！嬉しいな！",
-  ],
-};
+// 呼び込みセリフは src/vision/callDecision.ts のCALLOUT_POOLSに一本化。
+// 複数人時はgroupizeで寄せる(「あなた」→「みんな」)。
 
 // 遠いほど頻繁に呼び込む
 const COOLDOWN: Record<Exclude<DistanceZone, "absent">, number> = {
@@ -101,10 +59,6 @@ const COOLDOWN: Record<Exclude<DistanceZone, "absent">, number> = {
 // 核なので、farで無音のままにするのは誤りだった＝一度削除して復元した経緯あり）
 const GREET_FALLBACK_MS = 4000;
 const AWAY_TIMEOUT_MS = 4000; // これだけ不在が続いたら「離れた」と判断（顔検出の一瞬の途切れで切れないように）
-const INTERACTION_MACHINE_CONFIG = {
-  greetFallbackMs: GREET_FALLBACK_MS,
-  awayTimeoutMs: AWAY_TIMEOUT_MS,
-};
 
 // 会話モードが始まった瞬間に必ず言う一言。会話開始後はレムは黙って聞く設計なので、
 // これが無いと来場者から「近づいたのに何も起きない」ように見えてしまう
@@ -154,16 +108,11 @@ const STARTLE_MIN_SIZE = 0.12;        // far未満(相手が遠すぎる)での�
 const STARTLE_COOLDOWN_MS = 10000;    // 連発防止
 
 
-// AivisSpeech (VOICEVOX互換 API)
-// スピーカーIDは GET http://localhost:10101/speakers で確認して変更
-const AIVIS_URL = "http://localhost:10101";
-const SPEAKER_ID = 888753760;
-
 export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
 
-  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, faceYawRef, allFaceCentersRef, allEyeCentersRef, expressionRef, ready: camReady, error: camError } =
+  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, faceYawRef, allFaceCentersRef, allEyeCentersRef, expressionRef, ready: camReady, error: camError } =
     useFaceDetection();
 
   // 行動タグ(手招き等)をApp側から発火する用。Avatarはidの変化で新規トリガーを判定する
@@ -183,7 +132,7 @@ export default function App() {
   const geminiResetTranscript = geminiRaw.resetTranscript ?? (() => {});
   const geminiActive = geminiState !== "disconnected" && geminiState !== "error";
 
-  // エンジン: gemini=本線 (S2S), local=ローカル会話 (Web Speech STT + Ollama + speak())
+  // 会話エンジン: gemini=本線(Gemini Live S2S)、local=フォールバック(Web Speech STT + Ollama + Web Speech読み上げ)。
   // テスト: http://localhost:5173/?engine=local でフォールバックを強制
   const [engine, setEngine] = useState<"gemini" | "local">(
     new URLSearchParams(location.search).get("engine") === "local" ? "local" : "gemini",
@@ -191,16 +140,17 @@ export default function App() {
   const engineRef = useRef(engine);
   engineRef.current = engine;
 
-  // speak定義より後で実体を差し込む（フックはspeak生成前に呼ぶ必要があるため）
-  const speakRef = useRef<(text: string) => Promise<void>>(async () => {});
-  const local = useLocalConversation(useCallback((t: string) => speakRef.current(t), []));
+  // ローカル会話のspeakはWeb Speech既定のspeak()を流用し、喋り終わりまで待って次ターンへ
+  const local = useLocalConversation(useCallback((t: string) => {
+    speak(t);
+    return waitUntilNotSpeaking(15000);
+  }, []));
   const localRef = useRef(local);
   localRef.current = local;
   // 離脱/一時停止時に pending の local.start() を打ち消す用
   const localWantedRef = useRef(false);
 
   const displayLog = engine === "local" ? local.log : geminiRaw.log ?? [];
-  // interactionMachine用に会話エンジン状態を会話状態へ写像
   const activeConvState =
     engine === "local"
       ? local.state
@@ -238,11 +188,6 @@ export default function App() {
   geminiMetricsRef.current = geminiMetrics;
 
   function stopAppAudio() {
-    if (activeSourceRef.current) {
-      try { activeSourceRef.current.stop(); } catch { /* already stopped */ }
-      activeSourceRef.current.ctx.close().catch(() => {});
-      activeSourceRef.current = null;
-    }
     speechSynthesis.cancel();
     speakingRef.current = false;
     volumeRef.current = 0;
@@ -336,37 +281,20 @@ export default function App() {
   const [zone, setZone] = useState<DistanceZone>("absent");
   const [debugMode, setDebugMode] = useState(false); // 展示本番では隠す。"d"キーで表示切り替え
   const [curFaceSize, setCurFaceSize] = useState(0); // HUD表示用の現在の顔幅（閾値合わせの目安）。
-  const [interaction, setInteraction] = useState(createInitialInteractionState);
-  const interactionRef = useRef(interaction);
-  // このstateが150ms間隔で更新されることで、下のキー操作による閾値変更もHUDに追従表示される
-
-  const dispatchInteraction = useCallback((event: InteractionEvent): InteractionTransition => {
-    const transition = transitionInteraction(interactionRef.current, event, INTERACTION_MACHINE_CONFIG);
-    interactionRef.current = transition.state;
-    setInteraction(transition.state);
-    return transition;
-  }, []);
-
-  useEffect(() => {
-    dispatchInteraction({ type: "CONVERSATION_STATE_CHANGED", state: activeConvState });
-  }, [activeConvState, dispatchInteraction]);
+  const [curEyeDist, setCurEyeDist] = useState(0); // HUD表示用の眼間距離(IPD)。
+  // 視線外し反応のエスカレート段階カウンタ(interactionMachine撤去後の代替)
+  const lookAwayStreakRef = useRef(0);
 
   // "d"キーでデバッグUI（小窓カメラ・HUD・手動操作ボタン）の表示を切り替え。
-  // 加えて、展示当日に会場で人が通る距離へ距離ゾーン閾値をその場で合わせるためのキー操作:
-  //   ← / → : far/mid境界（気づきに入り始める距離）を上下
-  //   ↑ / ↓ : mid/near境界（会話が始まる距離）を上下
-  //   0     : 閾値をデフォルトに戻す
-  // HUDに現在の顔幅(size)と両閾値を出しているので、それを見ながら詰められる
+  // 展示当日の距離合わせは校正キー:
+  //   c     : 設置時1点校正。今映っている顔を2mとみなして k = 2*faceSize を保存
+  const faceSizeRefForCalib = useRef(0);
+  const eyeDistRefForCalib = useRef(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "d") { setDebugMode((v) => !v); return; }
-      if (!debugMode) return; // 閾値調整はデバッグHUD表示中のみ受け付ける（本番中の誤爆防止）
-      const STEP = 0.005;
-      if (e.key === "ArrowLeft")  { adjustZoneThreshold("far", -STEP); e.preventDefault(); }
-      else if (e.key === "ArrowRight") { adjustZoneThreshold("far", STEP); e.preventDefault(); }
-      else if (e.key === "ArrowDown")  { adjustZoneThreshold("mid", -STEP); e.preventDefault(); }
-      else if (e.key === "ArrowUp")    { adjustZoneThreshold("mid", STEP); e.preventDefault(); }
-      else if (e.key === "0") { resetZoneThresholds(); }
+      if (!debugMode) return; // 校正はデバッグHUD表示中のみ受け付ける（本番中の誤爆防止）
+      if (e.key === "c") { calibrateDistanceAt(faceSizeRefForCalib.current, 2, eyeDistRefForCalib.current); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -385,94 +313,20 @@ export default function App() {
     return () => { speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  function speakFallback(text: string) {
+  // 発話はWeb Speech既定(Aivis撤去)。呼び込み・見た目コメント・開始/別れの一言用。
+  // 会話本体の声はGemini Live(Zephyr)。前の発話が残っていたら止めてから喋る。
+  function speak(text: string) {
+    stopAppAudio();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "ja-JP"; u.rate = 1.05; u.pitch = 1.2;
     const jp = speechSynthesis.getVoices().find((v) => v.lang.startsWith("ja"));
     if (jp) u.voice = jp;
     u.onstart = () => { speakingRef.current = true; volumeRef.current = 0.6; };
     u.onend = () => { speakingRef.current = false; volumeRef.current = 0; };
+    u.onerror = () => { speakingRef.current = false; volumeRef.current = 0; };
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   }
-
-  const activeSourceRef = useRef<{ stop: () => void; ctx: AudioContext } | null>(null);
-
-  // speak()はAivisSpeechへのfetch(audio_query→synthesis)完了を待ってから再生を始めるため、
-  // 呼び込みの直後に見た目コメントのspeak()が続けて呼ばれると、両方とも「再生中フラグが立つ前」の
-  // 状態で「前の音声を止める」チェックを通過してしまい、fetchが終わった順に両方が再生されて
-  // 音が重なるバグがあった。世代カウンタ(speakGenRef)で「一番最後に呼ばれたspeak()だけが実際に
-  // 再生される」ことを保証する（fetch中に新しいspeak()が来たら、古い方はfetch完了後に自分で気づいて
-  // 再生をやめる）
-  const speakGenRef = useRef(0);
-  async function speak(text: string) {
-    const myGen = ++speakGenRef.current;
-
-    // 前の音声がまだ再生中なら止めてから新しい発話を始める（声の重なり防止）
-    stopAppAudio();
-    try {
-      const qRes = await fetch(
-        `${AIVIS_URL}/audio_query?text=${encodeURIComponent(text)}&speaker=${SPEAKER_ID}`,
-        { method: "POST" }
-      );
-      if (!qRes.ok) throw new Error(`audio_query ${qRes.status}`);
-      const query = await qRes.json();
-
-      const sRes = await fetch(`${AIVIS_URL}/synthesis?speaker=${SPEAKER_ID}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(query),
-      });
-      if (!sRes.ok) throw new Error(`synthesis ${sRes.status}`);
-
-      const arrayBuffer = await sRes.arrayBuffer();
-      // fetch待ちの間により新しいspeak()呼び出しがあった場合、自分は喋らずに引き下がる
-      if (myGen !== speakGenRef.current) return;
-
-      const ctx = new AudioContext();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      const data = new Uint8Array(analyser.frequencyBinCount);
-
-      const source = ctx.createBufferSource();
-      source.buffer = await ctx.decodeAudioData(arrayBuffer);
-
-      // decodeAudioData中にも新しい呼び出しが来ている可能性があるため直前でも再確認
-      if (myGen !== speakGenRef.current) {
-        ctx.close().catch(() => {});
-        return;
-      }
-
-      source.connect(analyser);
-      analyser.connect(ctx.destination);
-
-      speakingRef.current = true;
-      activeSourceRef.current = { stop: () => source.stop(), ctx };
-
-      function tick() {
-        if (!speakingRef.current) return;
-        analyser.getByteFrequencyData(data);
-        const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        volumeRef.current = Math.min(avg / 60, 1); // 0〜1 に正規化
-        requestAnimationFrame(tick);
-      }
-
-      source.onended = () => {
-        speakingRef.current = false;
-        volumeRef.current = 0;
-        if (activeSourceRef.current?.ctx === ctx) activeSourceRef.current = null;
-        if (ctx.state !== "closed") ctx.close().catch(() => {});
-      };
-
-      source.start();
-      tick();
-    } catch {
-      if (myGen !== speakGenRef.current) return;
-      console.warn("AivisSpeech unavailable, using Web Speech fallback");
-      speakFallback(text);
-    }
-  }
-  speakRef.current = speak;
 
   // speakingRef.current が false になる（今の発話が終わる）まで待つ。呼び込みの直後に見た目コメントを
   // 続けて喋らせたい時、その場の一発チェックだと「呼び込みがまだ再生中」なら丸ごと諦めてしまう
@@ -494,9 +348,9 @@ export default function App() {
   }
 
   function callOut(z: Exclude<DistanceZone, "absent">) {
-    const isGroup = faceCountRef.current >= 2;
-    const pool = isGroup ? GROUP_LINES[z] : LINES[z];
-    speak(pool[Math.floor(Math.random() * pool.length)]);
+    const pool = CALLOUT_POOLS[z];
+    const text = pool[Math.floor(Math.random() * pool.length)];
+    speak(faceCountRef.current >= 2 ? groupize(text) : text);
   }
 
   // 自動呼び込み制御：距離ゾーンに応じてセリフ・クールダウンを変える
@@ -518,6 +372,13 @@ export default function App() {
   const prevFaceSizeRef = useRef(0);
   const prevFaceSizeAtRef = useRef(0);
   const lastStartleRef = useRef(0);
+  // 声かけ判定(3秒ループ用・追加のみ): dwell/接近速度/発火クールダウンの管理
+  const callFirstSeenRef = useRef(0);
+  const callWasPresentRef = useRef(false);
+  const callPrevDRef = useRef<number | null>(null);
+  const callPrevAtRef = useRef(0);
+  const callLastFiredRef = useRef(0);
+  const callLastSpeakRef = useRef(0);
   // 視覚コメント（「私、見えてるよ」）: 生成は非同期(約1〜2秒)。結果が返る頃には
   // interval側のconvState(クロージャ値)が古いので、最新をrefで参照して差し込み可否を判定する
   const convStateRef = useRef(activeConvState);
@@ -542,12 +403,14 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => {
       const p = presentRef.current;
-      const z = getDistanceZone(faceSizeRef.current);
+      const z = getDistanceZone(faceSizeRef.current, eyeDistanceRef.current);
       setPresent(p);
       setFaces(faceCountRef.current);
       setZone(z);
       setCurFaceSize(faceSizeRef.current);
-      dispatchInteraction({ type: "FACE_UPDATED", zone: z, present: p, nowMs: performance.now() });
+      setCurEyeDist(eyeDistanceRef.current);
+      faceSizeRefForCalib.current = faceSizeRef.current;
+      eyeDistRefForCalib.current = eyeDistanceRef.current;
 
       // プロクセミクス反応: ゆっくり来る→何もしない、急に来る→驚くセリフ。
       // 距離の"量"でなく"来かた"（変化速度）だけを見る
@@ -648,11 +511,11 @@ export default function App() {
           now - lookAwaySinceRef.current > LOOK_AWAY_SUSTAIN_MS &&
           now - lastLookAwayCallRef.current > LOOK_AWAY_COOLDOWN_MS
         ) {
-          const tier = LOOK_AWAY_LINES_TIERED[Math.min(interactionRef.current.lookAwayStreak, LOOK_AWAY_LINES_TIERED.length - 1)];
+          const tier = LOOK_AWAY_LINES_TIERED[Math.min(lookAwayStreakRef.current, LOOK_AWAY_LINES_TIERED.length - 1)];
           speak(tier[Math.floor(Math.random() * tier.length)]);
           lastLookAwayCallRef.current = now;
           lookAwaySinceRef.current = 0;
-          dispatchInteraction({ type: "LOOK_AWAY_REACTION_FIRED" });
+          lookAwayStreakRef.current += 1;
         }
       } else {
         lookAwaySinceRef.current = 0;
@@ -664,14 +527,10 @@ export default function App() {
           // 会話モードは開始しても来場者が話すまでレムは黙って聞くだけの設計だが、それだと
           // 「近づいたのに何も起きない＝壊れてる？」と感じられてしまう。会話開始の瞬間は必ず
           // 一言喋って「聞く態勢に入った」ことを分かりやすくする（呼び込みの通常クールダウンとは別枠）
-          // Gemini側も同じ枠組み: 開始の一言(speak流用=Zephyr化対象外)＋connectで会話開始
+          speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
           if (engineRef.current === "local") {
-            if (!localWantedRef.current) {
-              speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
-              startLocalConv();
-            }
+            if (!localWantedRef.current) startLocalConv();
           } else {
-            speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
             void connectGeminiRobustRef.current();
           }
         }
@@ -695,9 +554,67 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, paused, activeConvState]);
 
+  // 声かけ判定ループ(3秒間隔・追加のみ): 既存150msループとは独立。decideCallの純粋判定で発話する
+  useEffect(() => {
+    const id = setInterval(() => {
+      const p = presentRef.current;
+      const now = performance.now();
+      // dwell管理: present立ち上がりで記録、absentでリセット
+      if (p && !callWasPresentRef.current) {
+        callFirstSeenRef.current = now;
+      }
+      if (!p) {
+        callFirstSeenRef.current = 0;
+        callPrevDRef.current = null;
+        callPrevAtRef.current = 0;
+      }
+      callWasPresentRef.current = p;
+
+      // 接近速度: (dPrev - D)/dt > 0.15m/s で接近中と判定
+      const d = estimateDistanceM(faceSizeRef.current, eyeDistanceRef.current);
+      let approaching = false;
+      if (p && d !== null && callPrevDRef.current !== null && callPrevAtRef.current > 0) {
+        const dt = (now - callPrevAtRef.current) / 1000;
+        if (dt > 0 && dt < 10) {
+          approaching = (callPrevDRef.current - d) / dt > 0.15;
+        }
+      }
+      if (p && d !== null) {
+        callPrevDRef.current = d;
+        callPrevAtRef.current = now;
+      }
+
+      if (!(started && !paused && p && activeConvState === "idle" && !speakingRef.current)) return;
+      const dwellS = callFirstSeenRef.current > 0 ? (now - callFirstSeenRef.current) / 1000 : 0;
+      const decision = decideCall({
+        d,
+        approaching,
+        dwellS,
+        yaw: faceYawRef.current,
+        smile: expressionRef.current.smile,
+        faceCount: faceCountRef.current,
+      });
+      if (!decision.shouldCall) return;
+      if (now - lastCall.current < 12000) return;
+      if (now - callLastFiredRef.current < 12000) return;
+      if (now - callLastSpeakRef.current < 4000) return;
+      let text = decision.text;
+      if (faceCountRef.current >= 2 && !text.includes("みんな") && !text.includes("皆")) {
+        const replaced = text.replace("あなた", "みんな");
+        text = replaced !== text ? replaced : `みんな、${text}`;
+      }
+      speak(text);
+      if (decision.action !== "none") fireAction(decision.action);
+      callLastFiredRef.current = now;
+      callLastSpeakRef.current = now;
+      lastCall.current = now;
+    }, 3000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, paused, activeConvState]);
+
   function handleStart() {
     setStarted(true);
-    dispatchInteraction({ type: "APP_STARTED" });
     callOut("mid"); // 音声解放を兼ねた初回発話
     lastCall.current = performance.now();
     // 展示用: ブラウザのタブ・ブックマーク・URLバーを隠して「窓の中の別世界」への没入感を上げる。
@@ -720,7 +637,7 @@ export default function App() {
 
         <Suspense fallback={null}>
           <Room />
-          <Avatar speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} allFaceCentersRef={allFaceCentersRef} allEyeCentersRef={allEyeCentersRef} expressionRef={expressionRef} faceSizeRef={faceSizeRef} actionRef={actionRef} paused={paused} conversing={activeConvState !== "idle"} />
+          <Avatar speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} allFaceCentersRef={allFaceCentersRef} allEyeCentersRef={allEyeCentersRef} expressionRef={expressionRef} faceSizeRef={faceSizeRef} eyeDistanceRef={eyeDistanceRef} actionRef={actionRef} paused={paused} conversing={activeConvState !== "idle"} />
           {/* 足元の接地影。「本当にそこに立っている」感を出す（暖色寄りのやわらかい影） */}
           <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
@@ -729,9 +646,6 @@ export default function App() {
       {/* 画面を「窓」に見せる枠オーバーレイ（off-axisカメラの視差で覗き込み感を強める）。
           デバッグ中はHUD/ボタンを隠さないよう非表示 */}
       {!debugMode && <WindowFrame />}
-
-      {/* 環境音（小音量）。稼働中のみ。展示スタートのクリックが音声解放を兼ねる */}
-      <Ambience active={started && !paused} />
 
       {/* 会話ログ（左側に流れるチャット） */}
       {started && displayLog.length > 0 && (
@@ -794,12 +708,9 @@ export default function App() {
             onClick={() => {
               if (paused) {
                 setPaused(false);
-                dispatchInteraction({ type: "APP_RESUMED" });
               } else {
                 setPaused(true);
-                dispatchInteraction({ type: "APP_PAUSED" });
-                // 呼び込み/驚き等のセリフ(speak())がAivisSpeechで再生中の場合、
-                // Gemini側の後始末だけでは止まらないため明示的に止める
+                // 呼び込み等のセリフ再生中は明示的に止める
                 stopAppAudio();
                 stopLocalConv(false);
                 if (geminiActive) {
@@ -867,10 +778,10 @@ export default function App() {
             </div>
           )}
           <div style={{ marginTop: 2, opacity: 0.85 }}>
-            size: {curFaceSize.toFixed(3)} | far境界(←→): {ZONE_THRESHOLDS.far.toFixed(3)} | near境界(↑↓): {ZONE_THRESHOLDS.mid.toFixed(3)} | 0=リセット
+            dist: {(() => { const d = estimateDistanceM(curFaceSize, curEyeDist); return d === null ? "-" : `${d.toFixed(2)}m`; })()} | k={getDistanceK().toFixed(3)}/kI={getDistanceKipd().toFixed(3)} | ipd={curEyeDist.toFixed(3)} | c=2m校正
           </div>
           <div style={{ marginTop: 2, opacity: 0.85 }}>
-            machine: {interaction.runtime} | phase: {interaction.visitorPhase} | attn: {interaction.attention} | greet: {interaction.greeting} | mconv: {interaction.conversation} | sid: {interaction.sessionId} | lookAway: {interaction.lookAwayStreak}
+            lookAway: {lookAwayStreakRef.current}
           </div>
         </div>
       )}

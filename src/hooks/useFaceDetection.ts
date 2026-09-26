@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { Matrix4, Quaternion, Euler, Vector3 } from "three";
+import { zoneForD } from "../tracking/types";
 
 const ABSENCE_GRACE_MS = 600;
 // 顔幅(faceSizeRef)の平滑化係数。生のバウンディングボックス幅は首を振る/俯く等の
@@ -16,6 +17,9 @@ export interface FaceCenter {
 // 目尻・目頭の4点(MediaPipe 468点トポロジの固定インデックス)。虹彩ランドマークは
 // モデルによって出力有無が変わるため使わず、常に存在する目の輪郭点の平均で近似する
 const EYE_CORNER_LANDMARK_INDICES = [33, 133, 362, 263];
+// IPD用に左右を分離。左目(33,133)の中心と右目(362,263)の中心の距離を眼間距離とする。
+const LEFT_EYE_INDICES = [33, 133];
+const RIGHT_EYE_INDICES = [362, 263];
 
 export interface FaceExpression {
   smile: number;    // 0〜1
@@ -23,31 +27,105 @@ export interface FaceExpression {
 }
 
 // 顔の正規化幅（0〜1）→距離の代理指標
-// 目安: <far = 遠い, far〜mid = 中距離, >mid = 近い
+// 目安: m基準のzoneForD(ZONE_FAR_M/ZONE_MID_M)に一本化
 export type DistanceZone = "far" | "mid" | "near" | "absent";
 
-// 距離ゾーンの顔幅しきい値。展示会場では人がモニタからどのくらいの距離を通るか事前に読めないため、
-// 本番画面(dキーのデバッグHUD)からその場でキー調整できるようモジュール変数にしている。
-// getDistanceZoneが常にこの最新値を参照するので、書き換えれば即座に判定に反映される。
-export const ZONE_THRESHOLDS = { far: 0.12, mid: 0.25 };
-const ZONE_THRESHOLDS_DEFAULT = { far: 0.12, mid: 0.25 };
+// ---- 連続距離推定 D = k / faceSize (P3) ----
+// ピンホール近似: faceSize ≒ f*W/(D*I) → D = k/faceSize (k=f*W/I)。
+// 既定k=0.36は旧閾値と整合する値(far 0.12→3.0m、mid 0.25→1.44m)。
+const DISTANCE_K_DEFAULT = 0.36;
+const DISTANCE_K_STORAGE_KEY = "mirage.distanceK";
+function loadDistanceK(): number {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DISTANCE_K_STORAGE_KEY) : null;
+    const v = raw !== null ? Number(raw) : NaN;
+    return Number.isFinite(v) && v > 0.05 && v < 2 ? v : DISTANCE_K_DEFAULT;
+  } catch {
+    return DISTANCE_K_DEFAULT;
+  }
+}
+let distanceK = loadDistanceK();
 
-export function getDistanceZone(faceSize: number): DistanceZone {
+// ---- IPD測距 D = k_ipd / ipd ----
+// 眼間距離(IPD実測≒63mm)は顔幅より個人差が小さい(±5% vs ±15%)ため主物差しにする。
+// 既定k_ipd=0.15は顔幅k=0.36との比(IPD/顔幅≒0.42)から整合させた値。cキー校正で上書きされる。
+const DISTANCE_K_IPD_DEFAULT = 0.15;
+const DISTANCE_K_IPD_STORAGE_KEY = "mirage.distanceKipd";
+function loadDistanceKipd(): number {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DISTANCE_K_IPD_STORAGE_KEY) : null;
+    const v = raw !== null ? Number(raw) : NaN;
+    return Number.isFinite(v) && v > 0.02 && v < 1 ? v : DISTANCE_K_IPD_DEFAULT;
+  } catch {
+    return DISTANCE_K_IPD_DEFAULT;
+  }
+}
+let distanceKipd = loadDistanceKipd();
+
+/** 現在のk_ipd。D = k_ipd / ipd。 */
+export function getDistanceKipd(): number {
+  return distanceKipd;
+}
+/** k_ipdを直接設定しlocalStorageに保存する。 */
+export function setDistanceKipd(k: number): void {
+  if (!Number.isFinite(k) || k <= 0) return;
+  distanceKipd = Math.min(1, Math.max(0.02, k));
+  try {
+    localStorage.setItem(DISTANCE_K_IPD_STORAGE_KEY, String(distanceKipd));
+  } catch { /* private mode等では保存を諦める */ }
+}
+
+/** 現在のk(単位:m)。D = k / faceSize。 */
+export function getDistanceK(): number {
+  return distanceK;
+}
+/** kを直接設定しlocalStorageに保存する。 */
+export function setDistanceK(k: number): void {
+  if (!Number.isFinite(k) || k <= 0) return;
+  distanceK = Math.min(2, Math.max(0.05, k));
+  try {
+    localStorage.setItem(DISTANCE_K_STORAGE_KEY, String(distanceK));
+  } catch { /* private mode等では保存を諦める */ }
+}
+/**
+ * 設置時1点校正: 実測距離metersMに立った時のfaceSizeから k = metersM * faceSize を決める。
+ * 例: 2m地点で `calibrateDistanceAt(faceSizeRef.current, 2)`。false=顔なし等で校正不可。
+ * ipd(眼間距離・正規化幅)を渡すとIPD側のkも同時校正する(横顔等でipd不正時は顔幅のみ)。
+ */
+export function calibrateDistanceAt(faceSize: number, metersM: number, ipd?: number): boolean {
+  if (!Number.isFinite(faceSize) || faceSize <= 0.02 || !Number.isFinite(metersM) || metersM <= 0) return false;
+  setDistanceK(metersM * faceSize);
+  if (ipd !== undefined && Number.isFinite(ipd) && ipd > 0.015) setDistanceKipd(metersM * ipd);
+  return true;
+}
+/**
+ * 顔幅→推定距離m。顔なし(size<=0)はnull。
+ * ipd(眼間距離)を渡すとIPD優先・顔幅fallback: 横顔等でipdが取れない時だけ顔幅式を使う。
+ */
+export function estimateDistanceM(faceSize: number, ipd?: number): number | null {
+  if (ipd !== undefined && Number.isFinite(ipd) && ipd > 0.015) {
+    return distanceKipd / Math.max(ipd, 1e-4);
+  }
+  if (!Number.isFinite(faceSize) || faceSize <= 0) return null;
+  return distanceK / Math.max(faceSize, 1e-4);
+}
+// 連続接近度への写像範囲。D<=NEARで1(目の前)、D>=FARで0(奥)。
+export const DISTANCE_NEAR_M = 0.8;
+export const DISTANCE_FAR_M = 4.0;
+/** 推定距離m→連続接近度0〜1。null(顔なし)は0。 */
+export function distanceToApproach(d: number | null): number {
+  if (d === null || !Number.isFinite(d)) return 0;
+  const t = 1 - (d - DISTANCE_NEAR_M) / (DISTANCE_FAR_M - DISTANCE_NEAR_M);
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+/** 顔幅→連続接近度0〜1のショートカット。 */
+export function approachFromFaceSize(faceSize: number): number {
+  return distanceToApproach(estimateDistanceM(faceSize));
+}
+
+export function getDistanceZone(faceSize: number, ipd?: number): DistanceZone {
   if (faceSize <= 0) return "absent";
-  if (faceSize < ZONE_THRESHOLDS.far) return "far";
-  if (faceSize < ZONE_THRESHOLDS.mid) return "mid";
-  return "near";
-}
-
-// 本番HUDからの閾値調整。far/midの境界を動かす（step単位）。midがfarを下回らないようにクランプする
-export function adjustZoneThreshold(which: "far" | "mid", delta: number) {
-  const next = ZONE_THRESHOLDS[which] + delta;
-  if (which === "far") ZONE_THRESHOLDS.far = Math.max(0.02, Math.min(next, ZONE_THRESHOLDS.mid - 0.01));
-  else ZONE_THRESHOLDS.mid = Math.max(ZONE_THRESHOLDS.far + 0.01, Math.min(next, 0.6));
-}
-export function resetZoneThresholds() {
-  ZONE_THRESHOLDS.far = ZONE_THRESHOLDS_DEFAULT.far;
-  ZONE_THRESHOLDS.mid = ZONE_THRESHOLDS_DEFAULT.mid;
+  return zoneForD(estimateDistanceM(faceSize, ipd));
 }
 
 export function useFaceDetection(enabled: boolean = true) {
@@ -57,6 +135,8 @@ export function useFaceDetection(enabled: boolean = true) {
   const faceCenterRef = useRef<FaceCenter | null>(null);
   const eyeCenterRef = useRef<FaceCenter | null>(null); // 顔全体でなく目の高さ・位置(視線を合わせる用)
   const faceSizeRef = useRef(0);
+  const eyeDistanceRef = useRef(0); // 主対象の眼間距離(IPD・正規化幅)。横顔等で取れない時は0
+  const allEyeDistancesRef = useRef<number[]>([]); // 全顔分のIPD(visitorTrackerの多人数対応用)
   const faceYawRef = useRef(0); // 主対象の頭の左右向き（ラジアン。0=正面、絶対値が大きいほどそっぽを向いている）
   const allFaceCentersRef = useRef<FaceCenter[]>([]);
   const allEyeCentersRef = useRef<FaceCenter[]>([]);
@@ -144,6 +224,17 @@ export function useFaceDetection(enabled: boolean = true) {
               y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
             };
           });
+          // 眼間距離(IPD): 左右目の中心間ユークリッド距離(正規化座標)。片目欠損時は0=fallback合図
+          const eyeDistances: number[] = landmarks.map((lm) => {
+            const l = LEFT_EYE_INDICES.map((idx) => lm[idx]).filter(Boolean);
+            const r = RIGHT_EYE_INDICES.map((idx) => lm[idx]).filter(Boolean);
+            if (l.length === 0 || r.length === 0) return 0;
+            const lx = l.reduce((s, p) => s + p.x, 0) / l.length;
+            const ly = l.reduce((s, p) => s + p.y, 0) / l.length;
+            const rx = r.reduce((s, p) => s + p.x, 0) / r.length;
+            const ry = r.reduce((s, p) => s + p.y, 0) / r.length;
+            return Math.hypot(lx - rx, ly - ry);
+          });
 
           // 「話しかけてる相手」の主対象を選ぶ。直前フレームで追っていた位置に一番近い顔を
           // 引き続き主対象にする（見失っていた/初回なら、一番大きい＝一番近い顔を選ぶ）
@@ -170,6 +261,13 @@ export function useFaceDetection(enabled: boolean = true) {
           faceSizeRef.current = faceSizeRef.current === 0
             ? rawWidth
             : faceSizeRef.current + (rawWidth - faceSizeRef.current) * FACE_SIZE_SMOOTHING;
+          const rawIpd = eyeDistances[primaryIdx] ?? 0;
+          eyeDistanceRef.current = rawIpd <= 0
+            ? 0
+            : eyeDistanceRef.current === 0
+              ? rawIpd
+              : eyeDistanceRef.current + (rawIpd - eyeDistanceRef.current) * FACE_SIZE_SMOOTHING;
+          allEyeDistancesRef.current = eyeDistances;
 
           // 頭の向き(yaw)を主対象の顔変換行列から抽出（そっぽを向いたか判定するため）
           const matrixData = transforms[primaryIdx]?.data;
@@ -195,6 +293,8 @@ export function useFaceDetection(enabled: boolean = true) {
           faceCenterRef.current = null;
           eyeCenterRef.current = null;
           faceSizeRef.current = 0;
+          eyeDistanceRef.current = 0;
+          allEyeDistancesRef.current = [];
           faceYawRef.current = 0;
           allFaceCentersRef.current = [];
           allEyeCentersRef.current = [];
@@ -256,6 +356,8 @@ export function useFaceDetection(enabled: boolean = true) {
     faceCenterRef,
     eyeCenterRef,
     faceSizeRef,
+    eyeDistanceRef,
+    allEyeDistancesRef,
     faceYawRef,
     allFaceCentersRef,
     allEyeCentersRef,

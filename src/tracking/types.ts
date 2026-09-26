@@ -10,6 +10,8 @@ export interface PositionSample {
   x: number;
   y: number;
   size: number;
+  /** 推定距離m(呼び出し側で estimateDistanceM 済みの場合)。未計算は undefined。 */
+  d?: number | null;
 }
 
 /** 速度の推定値（正規化座標/秒）。+vx = 画面右方向、+vy = 画面下方向。 */
@@ -40,6 +42,18 @@ export interface Visitor {
   positions: PositionSample[];
   /** 直近ウィンドウから推定した速度。 */
   velocity: Velocity;
+  /** 生の推定距離m(最新観測)。未計算時はnull。 */
+  dRaw: number | null;
+  /** Kalman平滑済み距離m。未計算時はnull。Avatarの連続接近・寄りそう度はこっちを使う。 */
+  d: number | null;
+  /** 平滑距離の速度m/s(-=接近)。 */
+  vd: number;
+  /** 顔向きyaw最新値(ラジアン、0=正対)。既定0。 */
+  yaw: number;
+  /** 笑顔度(0〜1)。既定0。 */
+  smile: number;
+  /** 寄りそう度スコア。 */
+  interest: { score: number; updatedMs: number };
   /** ゾーン遷移の履歴。 */
   zones: ZoneSample[];
 }
@@ -76,4 +90,24 @@ export interface FaceObservation {
   x: number;
   y: number;
   size: number;
+  /** 眼間距離(IPD・正規化幅)。多人数対応用。なくても動く。 */
+  ipd?: number;
+  /** 推定距離m(呼び出し側で estimateDistanceM(size, ipd) 済みの場合)。あればKalman平滑に使う。 */
+  d?: number | null;
+  /** 顔向きyaw(ラジアン、0=正対)。なくても動く。 */
+  yaw?: number;
+  /** 笑顔度(0〜1)。なくても動く。 */
+  smile?: number;
+}
+
+/** 距離ゾーンのm基準閾値。D=mは estimateDistanceM 由来の連続距離。 */
+export const ZONE_FAR_M = 3.0;
+export const ZONE_MID_M = 1.4;
+
+/** 推定距離m→ゾーン。null=顔なし相当→"far"。 */
+export function zoneForD(d: number | null): VisitorZone {
+  if (d === null || !Number.isFinite(d)) return "far";
+  if (d > ZONE_FAR_M) return "far";
+  if (d > ZONE_MID_M) return "mid";
+  return "near";
 }
