@@ -1,9 +1,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { Avatar } from "../components/Avatar";
-import { Room } from "../components/Room";
 import { useFaceDetection } from "../hooks/useFaceDetection";
 import type { FaceCenter } from "../hooks/useFaceDetection";
 import { generateVisionComment } from "../vision/visionComment";
@@ -73,18 +72,16 @@ export function Playground() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#f0ebe0" }}>
+    <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
       <Canvas camera={{ position: [0, 1.1, 3], fov: 35 }}>
-        <color attach="background" args={["#f0ebe0"]} />
+        {/* 背景は作り直し中のため無地。新背景は後で決める */}
+        <color attach="background" args={["#ffffff"]} />
         <ambientLight intensity={0.9} />
-        <directionalLight position={[2, 4, 3]} intensity={1.4} color="#fff4e0" />
-        <directionalLight position={[-3, 2, -2]} intensity={0.4} color="#ffe8c8" />
+        <directionalLight position={[2, 4, 3]} intensity={1.4} />
+        <directionalLight position={[-3, 2, -2]} intensity={0.4} />
 
-        <Grid args={[10, 10]} position={[0, 0, 0]} cellColor="#d8d0c0" sectionColor="#b8ac94" />
         <OrbitControls target={[0, 1, 0]} />
         <VolumeDriver speaking={speaking} volumeRef={volumeRef} />
-
-        <Room />
 
         <Suspense fallback={null}>
           <Avatar
@@ -94,7 +91,6 @@ export function Playground() {
             eyeCenterRef={eyeCenterRef}
             actionRef={actionRef}
           />
-          <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
       </Canvas>
 

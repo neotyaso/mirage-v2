@@ -1,19 +1,17 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows } from "@react-three/drei";
 import { Avatar } from "./components/Avatar";
-import { Room } from "./components/Room";
-import { WindowFrame } from "./components/WindowFrame";
 import { CALLOUT_POOLS, groupize } from "./vision/callDecision";
 import { useFaceDetection, getDistanceZone, estimateDistanceM, getDistanceK, getDistanceKipd, calibrateDistanceAt } from "./hooks/useFaceDetection";
 import type { FaceCenter, DistanceZone } from "./hooks/useFaceDetection";
 import { useGeminiLive } from "./hooks/useGeminiLive";
 import { useLocalConversation } from "./hooks/useLocalConversation";
 import { isLocalSttSupported } from "./hooks/conversation/stt";
+import { speakAndWait, waitUntilNotSpeaking } from "./hooks/conversation/tts";
 import type { RefObject } from "react";
 
-// Off-axis カメラ: 来場者の顔位置でカメラが動き「3Dの窓」効果を生む
+// Off-axis カメラ: 来場者の顔位置でカメラが動く
 const CAM_BASE: [number, number, number] = [0, 1.1, 3];
 const CAM_RANGE_X = 0.8; // 顔が端にいると左右±0.8m動く
 const CAM_RANGE_Y = 0.35;
@@ -26,7 +24,7 @@ function OffAxisCamera({ faceCenterRef }: { faceCenterRef: RefObject<FaceCenter 
     const fc = faceCenterRef.current;
     // 顔なし → 中央に戻る
     // 表示映像は鏡像（scaleX(-1)）。来場者が自分の右に動く→鏡像では右に見える
-    // →「窓」として同じ方向にカメラを動かすため fc.x をそのまま使う
+    // →同じ方向にカメラを動かすため fc.x をそのまま使う
     const tx = fc ? (fc.x - 0.5) * 2 * CAM_RANGE_X : 0;
     const ty = fc ? (0.5 - fc.y) * 2 * CAM_RANGE_Y : 0;
 
@@ -75,8 +73,6 @@ const FAREWELL_LINES = [
 ];
 
 // S2Sモデルが割り込み・視線を扱うため手書き反応は撤去(P8方針)
-
-
 export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
@@ -103,11 +99,9 @@ export default function App() {
   const engineRef = useRef(engine);
   engineRef.current = engine;
 
-  // ローカル会話のspeakはWeb Speech既定のspeak()を流用し、喋り終わりまで待って次ターンへ
-  const local = useLocalConversation(useCallback((t: string) => {
-    speak(t);
-    return waitUntilNotSpeaking(15000);
-  }, []));
+  // ローカル会話の発話はtts.ts側(speakAndWait)。喋り終わりまで待って次ターンへ
+  const local = useLocalConversation(useCallback((t: string) =>
+    speakAndWait(t, speakingRef, volumeRef, 15000), []));
   const localRef = useRef(local);
   localRef.current = local;
   // 離脱/一時停止時に pending の local.start() を打ち消す用
@@ -129,7 +123,7 @@ export default function App() {
     if (localWantedRef.current) return;
     localWantedRef.current = true;
     // 開始一言(speak)がマイクに漏れるので再生完了後にlisten開始
-    void waitUntilNotSpeaking(8000).then(() => {
+    void waitUntilNotSpeaking(speakingRef, 8000).then(() => {
       if (localWantedRef.current) localRef.current.start();
     });
   }
@@ -199,7 +193,7 @@ export default function App() {
   connectGeminiRobustRef.current = connectGeminiRobust;
 
   // セッション有効時のみ speakingRef/volumeRef を橋渡し。
-  // disconnected/error時は触らない（開始・別れの一言のspeak()=Aivis駆動のリップシンクを殺さないため）。
+  // disconnected/error時は触らない（開始・別れの一言のspeak()=Web Speech駆動のリップシンクを殺さないため）。
   const geminiMicLevel = geminiRaw.micLevel;
   const geminiOutLevel = geminiRaw.outLevel;
   useEffect(() => {
@@ -274,7 +268,7 @@ export default function App() {
     return () => { speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  // 発話はWeb Speech既定(Aivis撤去)。呼び込み・見た目コメント・開始/別れの一言用。
+  // 発話はWeb Speech。呼び込み・見た目コメント・開始/別れの一言用。
   // 会話本体の声はGemini Live(Zephyr)。前の発話が残っていたら止めてから喋る。
   function speak(text: string) {
     stopAppAudio();
@@ -287,25 +281,6 @@ export default function App() {
     u.onerror = () => { speakingRef.current = false; volumeRef.current = 0; };
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
-  }
-
-  // speakingRef.current が false になる（今の発話が終わる）まで待つ。呼び込みの直後に見た目コメントを
-  // 続けて喋らせたい時、その場の一発チェックだと「呼び込みがまだ再生中」なら丸ごと諦めてしまう
-  // （speak()側の世代カウンタが「後勝ち」なのは重なり防止のためであって、待たせる仕組みではないため）。
-  // ここで実際に呼び込みの再生完了を待ってから次の発話を投げることで、二段構えが確実に成立する。
-  // maxMsは万一喋り終わらない/検知できない場合の保険の上限
-  function waitUntilNotSpeaking(maxMs: number): Promise<void> {
-    return new Promise((resolve) => {
-      const start = performance.now();
-      function poll() {
-        if (!speakingRef.current || performance.now() - start > maxMs) {
-          resolve();
-          return;
-        }
-        setTimeout(poll, 150);
-      }
-      poll();
-    });
   }
 
   function callOut(z: Exclude<DistanceZone, "absent">) {
@@ -430,27 +405,19 @@ export default function App() {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Canvas camera={{ position: CAM_BASE, fov: 35 }}>
-        {/* 明るいナチュラルは維持しつつ、背景・光を少しだけ暖色寄りに（落ち着いた昼下がりの居室感） */}
-        <color attach="background" args={["#f2e8d4"]} />
-        <fog attach="fog" args={["#f2e8d4", 4, 9]} />
+        {/* 背景は作り直し中のため無地。新背景は後で決める */}
+        <color attach="background" args={["#ffffff"]} />
 
-        <ambientLight intensity={0.9} color="#fff3e2" />
-        <directionalLight position={[2, 4, 3]} intensity={1.4} color="#ffedc8" />
-        <directionalLight position={[-3, 2, -2]} intensity={0.42} color="#ffe0b6" />
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[2, 4, 3]} intensity={1.4} />
+        <directionalLight position={[-3, 2, -2]} intensity={0.4} />
 
         <OffAxisCamera faceCenterRef={faceCenterRef} />
 
         <Suspense fallback={null}>
-          <Room />
           <Avatar speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} paused={paused} />
-          {/* 足元の接地影。「本当にそこに立っている」感を出す（暖色寄りのやわらかい影） */}
-          <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
       </Canvas>
-
-      {/* 画面を「窓」に見せる枠オーバーレイ（off-axisカメラの視差で覗き込み感を強める）。
-          デバッグ中はHUD/ボタンを隠さないよう非表示 */}
-      {!debugMode && <WindowFrame />}
 
       {/* 会話ログ（左側に流れるチャット） */}
       {started && displayLog.length > 0 && (
@@ -509,7 +476,7 @@ export default function App() {
             </button>
           )}
           <button
-            style={{ ...callBtnStyle, background: paused ? "rgba(34,197,94,0.8)" : "rgba(239,68,68,0.8)" }}
+            style={{ ...callBtnStyle, background: paused ? "#22c55e" : "#ef4444" }}
             onClick={() => {
               if (paused) {
                 setPaused(false);
@@ -606,9 +573,8 @@ const startBtnStyle: CSSProperties = {
   padding: "16px 36px",
   fontSize: 18,
   fontWeight: "bold",
-  background: "linear-gradient(135deg, #ff6ad5, #8b5cf6)",
+  background: "#8b5cf6",
   borderRadius: 12,
-  boxShadow: "0 4px 20px rgba(139,92,246,0.6)",
 };
 
 const callBtnStyle: CSSProperties = {
@@ -619,7 +585,7 @@ const callBtnStyle: CSSProperties = {
   transform: "translateX(-50%)",
   padding: "10px 20px",
   fontSize: 14,
-  background: "rgba(139,92,246,0.8)",
+  background: "#8b5cf6",
   borderRadius: 8,
 };
 
@@ -652,8 +618,7 @@ const fallbackBannerStyle: CSSProperties = {
   alignItems: "center",
   gap: 10,
   padding: "8px 12px",
-  background: "rgba(120,53,15,0.92)",
-  border: "1px solid #fbbf24",
+  background: "#7c2d12",
   borderRadius: 8,
   fontSize: 12,
   color: "#fef3c7",
@@ -700,10 +665,8 @@ const chatBubbleStyle = (role: "user" | "assistant"): CSSProperties => ({
   fontSize: 13,
   lineHeight: 1.4,
   color: "#fff",
-  background: role === "user" ? "rgba(55,65,81,0.85)" : "rgba(139,92,246,0.85)",
-  backdropFilter: "blur(4px)",
+  background: role === "user" ? "#374151" : "#8b5cf6",
   textAlign: "left",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
 });
 
 const hudStyle: CSSProperties = {

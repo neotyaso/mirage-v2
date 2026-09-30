@@ -1,28 +1,6 @@
-// ローカルTTSフォールバック: AivisSpeech (VOICEVOX互換 API) 合成
-// 失敗時は呼び出し側が Web Speech API へフォールバックする。
-// スピーカーIDは GET http://localhost:10101/speakers で確認して変更
+// ローカルTTSはWeb Speech API で読み上げる
+import type { RefObject } from "react";
 
-const AIVIS_URL = "http://localhost:10101";
-export const DEFAULT_SPEAKER_ID = 888753760;
-
-// テキスト → PCM ArrayBuffer。失敗時はthrow（呼び出し側がWeb Speechへフォールバック）
-export async function synthesizeAivis(text: string, speakerId: number): Promise<ArrayBuffer> {
-  const qRes = await fetch(
-    `${AIVIS_URL}/audio_query?text=${encodeURIComponent(text)}&speaker=${speakerId}`,
-    { method: "POST" },
-  );
-  if (!qRes.ok) throw new Error("audio_query failed");
-  const query = await qRes.json();
-  const sRes = await fetch(`${AIVIS_URL}/synthesis?speaker=${speakerId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(query),
-  });
-  if (!sRes.ok) throw new Error("synthesis failed");
-  return sRes.arrayBuffer();
-}
-
-// Web Speech API で読み上げる（Aivis不可時の保険）
 export function speakWithWebSpeech(text: string): Promise<void> {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
@@ -35,5 +13,40 @@ export function speakWithWebSpeech(text: string): Promise<void> {
     u.onerror = () => resolve();
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
+  });
+}
+
+// ローカル会話用: Web Speechで喋り、終わるまで待つ。リップシンク用refも駆動する
+export function speakAndWait(
+  text: string,
+  speakingRef: RefObject<boolean>,
+  volumeRef: RefObject<number>,
+  maxMs = 15000,
+): Promise<void> {
+  speakingRef.current = true;
+  volumeRef.current = 0.6;
+  const timeout = new Promise<void>((r) => setTimeout(r, maxMs));
+  return Promise.race([speakWithWebSpeech(text), timeout]).finally(() => {
+    speakingRef.current = false;
+    volumeRef.current = 0;
+  });
+}
+
+// speakingRef.current が false になる（今の発話が終わる）まで待つ。
+// fire-and-forgetなspeak()の再生完了待ち用。maxMsは万一終わらない場合の保険の上限
+export function waitUntilNotSpeaking(
+  speakingRef: RefObject<boolean>,
+  maxMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    function poll() {
+      if (!speakingRef.current || performance.now() - start > maxMs) {
+        resolve();
+        return;
+      }
+      setTimeout(poll, 150);
+    }
+    poll();
   });
 }
