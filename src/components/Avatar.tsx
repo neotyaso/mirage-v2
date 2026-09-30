@@ -5,7 +5,7 @@ import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 import type { VRMAnimation } from "@pixiv/three-vrm-animation";
 import * as THREE from "three";
-import type { FaceCenter, FaceExpression } from "../hooks/useFaceDetection";
+import type { FaceCenter } from "../hooks/useFaceDetection";
 
 const MODEL_URL = "/avatar/sample.vrm";
 const WALK_URL = "/avatar/walk.vrma";
@@ -16,46 +16,13 @@ const MAX_DELTA_S = 1 / 20;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-// ponytail: 互換のための残骸。Playgroundがimportしているので型と既定値だけ残す。中身は参照しない
-export interface BeckonPose {
-  armZ: number; armX: number; elbowZ: number; foreTwist: number;
-  handRoll: number; sway: number; hz: number; shoulderZ: number;
-}
-export const DEFAULT_BECKON_POSE: BeckonPose = {
-  armZ: -0.96, armX: 0.22, elbowZ: -0.66, foreTwist: 1.1, handRoll: -1.26, sway: 0.38, hz: 0.68, shoulderZ: 0.22,
-};
-export interface GlanceParams {
-  durationS: number; intervalMinS: number; intervalMaxS: number;
-  neckMax: number; lerp: number; pauseChance: number; chestMax: number;
-}
-export const DEFAULT_GLANCE_PARAMS: GlanceParams = {
-  durationS: 0.8, intervalMinS: 3.5, intervalMaxS: 8.0, neckMax: 0.75, lerp: 0.22, pauseChance: 0.6, chestMax: 0.55,
-};
-export type WanderAnchorKey = "window" | "plant";
-export interface AnchorGazeParams {
-  chance: number; lingerMinS: number; lingerMaxS: number;
-  neckMax: number; chestMax: number; turnLerp: number; pitch: number;
-}
-export const DEFAULT_ANCHOR_GAZE_PARAMS: AnchorGazeParams = {
-  chance: 0.35, lingerMinS: 4, lingerMaxS: 7, neckMax: 0.5, chestMax: 0.45, turnLerp: 0.12, pitch: 0.12,
-};
-
 export interface AvatarProps {
   speakingRef?: RefObject<boolean>;
   volumeRef?: RefObject<number>;
   faceCenterRef?: RefObject<FaceCenter | null>;
   eyeCenterRef?: RefObject<FaceCenter | null>;
-  allFaceCentersRef?: RefObject<FaceCenter[]>;
-  allEyeCentersRef?: RefObject<FaceCenter[]>;
-  expressionRef?: RefObject<FaceExpression>;
-  faceSizeRef?: RefObject<number>;
-  eyeDistanceRef?: RefObject<number>;
-  actionRef?: RefObject<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>;
+  actionRef?: RefObject<{ tag: "stretch"; id: number } | null>;
   paused?: boolean;
-  conversing?: boolean;
-  beckonPoseRef?: RefObject<BeckonPose>;
-  glanceParamsRef?: RefObject<GlanceParams>;
-  anchorGazeParamsRef?: RefObject<AnchorGazeParams>;
 }
 
 /**
@@ -163,7 +130,7 @@ export function Avatar({ speakingRef, volumeRef, faceCenterRef, eyeCenterRef, ac
 
     if (!gestureActive.current) walkMixer.current?.update(delta);
 
-    // 感情タグ→プリセット。stretch(.vrma)だけ再生し、手続き型(nod/tilt/beckon/glance/surprise)は無視
+    // 感情タグ→プリセット。stretch(.vrma)だけ再生する
     const action = actionRef?.current;
     if (action && action.id !== lastActionId.current) {
       lastActionId.current = action.id;

@@ -2,24 +2,14 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
-import { Avatar, DEFAULT_BECKON_POSE, DEFAULT_GLANCE_PARAMS, DEFAULT_ANCHOR_GAZE_PARAMS } from "../components/Avatar";
-import type { BeckonPose, GlanceParams, AnchorGazeParams } from "../components/Avatar";
+import { Avatar } from "../components/Avatar";
 import { Room } from "../components/Room";
-import { useFaceDetection, getDistanceZone } from "../hooks/useFaceDetection";
-import type { DistanceZone, FaceCenter, FaceExpression } from "../hooks/useFaceDetection";
+import { useFaceDetection } from "../hooks/useFaceDetection";
+import type { FaceCenter } from "../hooks/useFaceDetection";
 import { generateVisionComment } from "../vision/visionComment";
 
-// アニメーション・会話を手動/実カメラ/実会話で試せる試験用ページ。
-// 本番App.tsxと同じrefインターフェースをAvatarに渡す。
-// カメラ・会話は「カメラON」「会話開始」ボタンで任意にON/OFFできる（OFF中は手動スライダー等で代用）。
-
-// useFaceDetection.getDistanceZoneのしきい値に対応する代表値
-const ZONE_SIZE: Record<DistanceZone, number> = {
-  absent: 0,
-  far: 0.08,
-  mid: 0.18,
-  near: 0.32,
-};
+// 試験用ページ。Avatarが実際に参照するものだけ渡す
+// （speaking/volume=リップシンク、faceCenter/eyeCenter=注視、stretch=ジェスチャー）。
 
 function VolumeDriver({ speaking, volumeRef }: { speaking: boolean; volumeRef: React.MutableRefObject<number> }) {
   useFrame((state) => {
@@ -31,58 +21,16 @@ function VolumeDriver({ speaking, volumeRef }: { speaking: boolean; volumeRef: R
 export function Playground() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
-  // Avatarへ渡す出力ref。カメラONの間は実カメラの値、OFFの間は手動操作の値をここへ同期する
   const faceCenterRef = useRef<FaceCenter | null>({ x: 0.5, y: 0.5 });
-  const allFaceCentersRef = useRef<FaceCenter[]>([]);
-  const faceSizeRef = useRef(0);
-  const faceYawRef = useRef(0);
-  const expressionRef = useRef<FaceExpression>({ smile: 0, surprised: 0 });
+  const eyeCenterRef = useRef<FaceCenter | null>(null);
 
-  const [zone, setZone] = useState<DistanceZone>("absent");
   const [speaking, setSpeaking] = useState(false);
-  const [smile, setSmile] = useState(0);
-  const [surprised, setSurprised] = useState(0);
-  // 実STT/LLM/TTSを起動せず「会話中(conversing)」状態だけを擬似的にAvatarへ渡すデバッグ用トグル。
-  // 「徘徊で後ろを向いた瞬間に会話が始まると背中を向けたまま動かない」系のバグを、
-  // マイク/LLMなしで再現・確認するために使う（不在→徘徊で後ろを向かせ→擬似会話ONで検証）
-  const [fakeConversing, setFakeConversing] = useState(false);
-
-  // 手招みポーズのライブ調整（座り/伸びと同じ方式）。スライダー→refでAvatarに即反映
-  const [beckonPose, setBeckonPose] = useState<BeckonPose>({ ...DEFAULT_BECKON_POSE });
-  const beckonPoseRef = useRef<BeckonPose>({ ...DEFAULT_BECKON_POSE });
-  function setBeckonField(k: keyof BeckonPose, v: number) {
-    const next = { ...beckonPoseRef.current, [k]: v };
-    beckonPoseRef.current = next;
-    setBeckonPose(next);
-  }
-
-  // チラ見パラメータのライブ調整（手招みポーズと同じ方式）
-  const [glanceParams, setGlanceParams] = useState<GlanceParams>({ ...DEFAULT_GLANCE_PARAMS });
-  const glanceParamsRef = useRef<GlanceParams>({ ...DEFAULT_GLANCE_PARAMS });
-  function setGlanceField(k: keyof GlanceParams, v: number) {
-    const next = { ...glanceParamsRef.current, [k]: v };
-    glanceParamsRef.current = next;
-    setGlanceParams(next);
-  }
-
-  // 「意味のある徘徊」（窓/プラントへ向かう演出）パラメータのライブ調整（チラ見と同じ方式）
-  const [anchorGazeParams, setAnchorGazeParams] = useState<AnchorGazeParams>({ ...DEFAULT_ANCHOR_GAZE_PARAMS });
-  const anchorGazeParamsRef = useRef<AnchorGazeParams>({ ...DEFAULT_ANCHOR_GAZE_PARAMS });
-  function setAnchorGazeField(k: keyof AnchorGazeParams, v: number) {
-    const next = { ...anchorGazeParamsRef.current, [k]: v };
-    anchorGazeParamsRef.current = next;
-    setAnchorGazeParams(next);
-  }
-  // コントロールパネルがアバターに被って邪魔な時に隠せるようにする
+  const [gaze, setGaze] = useState<FaceCenter>({ x: 0.5, y: 0.5 });
   const [panelVisible, setPanelVisible] = useState(true);
 
-  // ---- カメラ(実顔検出) ----
   const [cameraOn, setCameraOn] = useState(false);
   const cam = useFaceDetection(cameraOn);
-  const [camFaces, setCamFaces] = useState(0);
 
-  // 視覚コメント（「私、見えてるよ」）の手動テスト。カメラONで自分を映して押すと、
-  // Gemini visionが返した一言を表示する（本番はApp側で新規来場時に自動発火）
   const [visionText, setVisionText] = useState<string>("");
   const [visionLoading, setVisionLoading] = useState(false);
   async function testVision() {
@@ -95,41 +43,27 @@ export function Playground() {
     setVisionLoading(false);
   }
 
-  // カメラONの間、実検出値をAvatar出力refへ同期する。OFFの間は手動操作がそのままAvatarに効く
+  // カメラONの間、実検出値をAvatar出力refへ同期する。OFFの間は手動スライダーが効く
   useEffect(() => {
     if (!cameraOn) return;
     const id = setInterval(() => {
-      const z = getDistanceZone(cam.faceSizeRef.current, cam.eyeDistanceRef.current);
       faceCenterRef.current = cam.faceCenterRef.current;
-      allFaceCentersRef.current = cam.allFaceCentersRef.current;
-      faceSizeRef.current = cam.faceSizeRef.current;
-      faceYawRef.current = cam.faceYawRef.current;
-      expressionRef.current = cam.expressionRef.current;
-      setZone(z);
-      setCamFaces(cam.faceCountRef.current);
+      eyeCenterRef.current = cam.eyeCenterRef.current;
     }, 100);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraOn]);
 
-  function toggleCamera() {
-    setCameraOn((v) => !v);
+  function setGazeField(k: keyof FaceCenter, v: number) {
+    const next = { ...gaze, [k]: v };
+    setGaze(next);
+    faceCenterRef.current = next;
+    eyeCenterRef.current = null;
   }
 
-  // ---- 会話(擬似フラグのみ。実STT/LLM/TTSはApp本番で) ----
-  const actionRef = useRef<{ tag: "nod" | "tilt" | "surprise" | "stretch" | "beckon" | "glance"; id: number } | null>(null);
-
-  // 行動タグ: 手動ボタンで発火。idは負のタイムスタンプにして衝突しないようにする
-  // ("stretch"/"glance"はLLMには使わせておらず手動トリガー専用)
-  function triggerAction(tag: "nod" | "tilt" | "stretch" | "beckon" | "glance") {
-    actionRef.current = { tag, id: -Date.now() };
-  }
-
-  function selectZone(z: DistanceZone) {
-    if (cameraOn) return; // カメラONの間はゾーンも実検出から自動算出される
-    setZone(z);
-    faceSizeRef.current = ZONE_SIZE[z];
-    faceCenterRef.current = z === "absent" ? null : { x: 0.5, y: 0.5 };
+  const actionRef = useRef<{ tag: "stretch"; id: number } | null>(null);
+  function triggerStretch() {
+    actionRef.current = { tag: "stretch", id: -Date.now() };
   }
 
   function toggleSpeaking() {
@@ -157,20 +91,13 @@ export function Playground() {
             speakingRef={speakingRef}
             volumeRef={volumeRef}
             faceCenterRef={faceCenterRef}
-            allFaceCentersRef={allFaceCentersRef}
-            expressionRef={expressionRef}
-            faceSizeRef={faceSizeRef}
+            eyeCenterRef={eyeCenterRef}
             actionRef={actionRef}
-            conversing={fakeConversing}
-            beckonPoseRef={beckonPoseRef}
-            glanceParamsRef={glanceParamsRef}
-            anchorGazeParamsRef={anchorGazeParamsRef}
           />
           <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
       </Canvas>
 
-      {/* 検出用カメラ（カメラON時のみ表示） */}
       <video
         ref={cam.videoRef}
         playsInline
@@ -199,13 +126,13 @@ export function Playground() {
 
       <div style={{ ...panelStyle, display: panelVisible ? "flex" : "none", paddingTop: 44 }}>
         <div style={rowStyle}>
-          <span style={labelStyle}>カメラ（実顔検出）</span>
-          <button onClick={toggleCamera} style={{ ...btnStyle, background: cameraOn ? "#ef4444" : "#374151" }}>
+          <span style={labelStyle}>カメラ（実顔検出→注視）</span>
+          <button onClick={() => setCameraOn((v) => !v)} style={{ ...btnStyle, background: cameraOn ? "#ef4444" : "#374151" }}>
             {cameraOn ? "■ カメラOFF" : "▶ カメラON"}
           </button>
           {cameraOn && (
             <span style={{ fontSize: 11, opacity: 0.7 }}>
-              {cam.error ? `ERR ${cam.error}` : cam.ready ? "ok" : "…"} | 顔: {camFaces} | zone: {zone}
+              {cam.error ? `ERR ${cam.error}` : cam.ready ? "ok" : "…"}
             </span>
           )}
         </div>
@@ -219,177 +146,33 @@ export function Playground() {
           </div>
         )}
 
-        <div style={rowStyle}>
-          <span style={labelStyle}>距離ゾーン（歩行トリガー）{cameraOn && "※カメラON中は自動"}</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["absent", "far", "mid", "near"] as DistanceZone[]).map((z) => (
-              <button
-                key={z}
-                onClick={() => selectZone(z)}
-                disabled={cameraOn}
-                style={{ ...btnStyle, background: zone === z ? "#8b5cf6" : "#374151", opacity: cameraOn ? 0.5 : 1 }}
-              >
-                {{ absent: "不在", far: "遠い", mid: "中距離", near: "近い" }[z]}
-              </button>
+        {!cameraOn && (
+          <div style={rowStyle}>
+            <span style={labelStyle}>注視（手動）</span>
+            {(["x", "y"] as (keyof FaceCenter)[]).map((k) => (
+              <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ ...labelStyle, minWidth: 60, fontSize: 11 }}>{k} {gaze[k].toFixed(2)}</span>
+                <input
+                  type="range" min={0} max={1} step={0.01} value={gaze[k]}
+                  onChange={(e) => setGazeField(k, Number(e.target.value))} style={{ flex: 1 }}
+                />
+              </div>
             ))}
           </div>
-        </div>
+        )}
 
         <div style={rowStyle}>
-          <span style={labelStyle}>チラ見（far距離での一瞬の振り向き演出）</span>
-          <span style={{ fontSize: 11, opacity: 0.6 }}>
-            本番では「遠い」ゾーンにいる間、徘徊を続けたまま不規則な間隔(既定3.5〜8秒)で
-            一瞬だけ首を大きく来場者へ向けてすぐ戻す。ボタンは待たずに今すぐ1回分を再生する（ゾーン不問）
-          </span>
-          <button onClick={() => triggerAction("glance")} style={{ ...btnStyle, background: "#374151" }}>
-            👀 チラ見を今すぐ見る
-          </button>
-          {([
-            ["durationS", "長さ(秒)", 0.2, 2],
-            ["neckMax", "首の最大角(rad)", 0.1, 1.2],
-            ["chestMax", "胸(上半身)の最大角(rad)", 0, 1.2],
-            ["lerp", "振り向く速さ", 0.05, 0.6],
-            ["intervalMinS", "間隔・最短(秒)", 0.5, 10],
-            ["intervalMaxS", "間隔・最長(秒)", 0.5, 15],
-            ["pauseChance", "徘徊が止まった瞬間に誘発する確率", 0, 1],
-          ] as [keyof GlanceParams, string, number, number][]).map(([k, label, min, max]) => (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...labelStyle, minWidth: 148, fontSize: 11 }}>{label} {glanceParams[k].toFixed(2)}</span>
-              <input
-                type="range" min={min} max={max} step={0.02} value={glanceParams[k]}
-                onChange={(e) => setGlanceField(k, Number(e.target.value))} style={{ flex: 1 }}
-              />
-            </div>
-          ))}
-          <button
-            onClick={() => navigator.clipboard.writeText(JSON.stringify(glanceParams))}
-            style={{ ...btnStyle, background: "#374151", marginTop: 4 }}
-          >
-            値をコピー
-          </button>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>意味のある徘徊（窓/プラントへ向かう演出）</span>
-          <span style={{ fontSize: 11, opacity: 0.6 }}>
-            本番では「不在/遠い」ゾーンで徘徊の目標を選び直すたびchanceの確率で窓かプラントへ
-            向かう（残りは従来通りの完全ランダム点）。到着後は通常の徘徊停止より長く留まり、
-            首/胸をその方向へ向ける。
-          </span>
-          {([
-            ["chance", "目的地を選ぶ確率", 0, 1],
-            ["lingerMinS", "滞在(秒)・最短", 1, 15],
-            ["lingerMaxS", "滞在(秒)・最長", 1, 20],
-            ["neckMax", "首の最大角(rad)", 0.1, 1.2],
-            ["chestMax", "胸(上半身)の最大角(rad)", 0, 1.2],
-            ["turnLerp", "向き直る速さ", 0.05, 0.6],
-            ["pitch", "縦の傾き(rad)：窓=見上げ/プラント=見下ろし", 0, 0.4],
-          ] as [keyof AnchorGazeParams, string, number, number][]).map(([k, label, min, max]) => (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...labelStyle, minWidth: 148, fontSize: 11 }}>{label} {anchorGazeParams[k].toFixed(2)}</span>
-              <input
-                type="range" min={min} max={max} step={0.02} value={anchorGazeParams[k]}
-                onChange={(e) => setAnchorGazeField(k, Number(e.target.value))} style={{ flex: 1 }}
-              />
-            </div>
-          ))}
-          <button
-            onClick={() => navigator.clipboard.writeText(JSON.stringify(anchorGazeParams))}
-            style={{ ...btnStyle, background: "#374151", marginTop: 4 }}
-          >
-            値をコピー
-          </button>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>発話中（ジェスチャー・リップシンク）</span>
+          <span style={labelStyle}>発話中（リップシンク）</span>
           <button onClick={toggleSpeaking} style={{ ...btnStyle, background: speaking ? "#ef4444" : "#374151" }}>
             {speaking ? "■ 停止" : "▶ 話す"}
           </button>
         </div>
 
         <div style={rowStyle}>
-          <span style={labelStyle}>会話中フラグ（擬似・向き固定バグ確認用）</span>
-          <button onClick={() => setFakeConversing((v) => !v)} style={{ ...btnStyle, background: fakeConversing ? "#ef4444" : "#374151" }}>
-            {fakeConversing ? "■ 会話中OFF" : "🗣 会話中ON"}
+          <span style={labelStyle}>ジェスチャー（stretch.vrma）</span>
+          <button onClick={triggerStretch} style={{ ...btnStyle, background: "#374151" }}>
+            伸びる
           </button>
-          <span style={{ fontSize: 11, opacity: 0.6 }}>不在で後ろ向きにさせてからONにすると、こちらへ向き直るか確認できる</span>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>行動タグ（手続き型アクション）</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => triggerAction("nod")} style={{ ...btnStyle, background: "#374151" }}>
-              頷く
-            </button>
-            <button onClick={() => triggerAction("tilt")} style={{ ...btnStyle, background: "#374151" }}>
-              首をかしげる
-            </button>
-          </div>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>Mixamoリターゲット済みジェスチャー</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => triggerAction("stretch")} style={{ ...btnStyle, background: "#374151" }}>
-              伸びる
-            </button>
-            <button onClick={() => triggerAction("beckon")} style={{ ...btnStyle, background: "#374151" }}>
-              手招き
-            </button>
-          </div>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>手招みポーズ調整（「手招き」を押して動きを見ながら）</span>
-          {([
-            ["armZ", "上腕 上下(小=上)", -10, 10],
-            ["armX", "上腕 前後", -10, 10],
-            ["elbowZ", "肘 曲げ", -10, 10],
-            ["foreTwist", "前腕ひねり(手のひら)", -10, 10],
-            ["handRoll", "手首ひねり", -10, 10],
-            ["sway", "振り幅", 0, 10],
-            ["hz", "振る速さ", 0.1, 10],
-            ["shoulderZ", "肩 持ち上げ", -10, 10],
-          ] as [keyof BeckonPose, string, number, number][]).map(([k, label, min, max]) => (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...labelStyle, minWidth: 148, fontSize: 11 }}>{label} {beckonPose[k].toFixed(2)}</span>
-              <input
-                type="range" min={min} max={max} step={0.02} value={beckonPose[k]}
-                onChange={(e) => setBeckonField(k, Number(e.target.value))} style={{ flex: 1 }}
-              />
-            </div>
-          ))}
-          <button
-            onClick={() => navigator.clipboard.writeText(JSON.stringify(beckonPose))}
-            style={{ ...btnStyle, background: "#374151", marginTop: 4 }}
-          >
-            値をコピー
-          </button>
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>笑顔 {smile.toFixed(2)} {cameraOn && "※カメラON中は自動"}</span>
-          <input
-            type="range" min={0} max={1} step={0.01} value={smile} disabled={cameraOn}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setSmile(v);
-              expressionRef.current = { ...expressionRef.current, smile: v };
-            }}
-          />
-        </div>
-
-        <div style={rowStyle}>
-          <span style={labelStyle}>驚き {surprised.toFixed(2)} {cameraOn && "※カメラON中は自動"}</span>
-          <input
-            type="range" min={0} max={1} step={0.01} value={surprised} disabled={cameraOn}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setSurprised(v);
-              expressionRef.current = { ...expressionRef.current, surprised: v };
-            }}
-          />
         </div>
       </div>
     </div>

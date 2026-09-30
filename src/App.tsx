@@ -81,7 +81,7 @@ export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
 
-  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allEyeCentersRef, expressionRef, ready: camReady, error: camError } =
+  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, ready: camReady, error: camError } =
     useFaceDetection();
 
   type GeminiContract = ReturnType<typeof useGeminiLive> & Partial<{
@@ -442,7 +442,7 @@ export default function App() {
 
         <Suspense fallback={null}>
           <Room />
-          <Avatar speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} allFaceCentersRef={allFaceCentersRef} allEyeCentersRef={allEyeCentersRef} expressionRef={expressionRef} faceSizeRef={faceSizeRef} eyeDistanceRef={eyeDistanceRef} paused={paused} conversing={activeConvState !== "idle"} />
+          <Avatar speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} paused={paused} />
           {/* 足元の接地影。「本当にそこに立っている」感を出す（暖色寄りのやわらかい影） */}
           <ContactShadows position={[0, 0.01, 0]} scale={5} far={2.2} blur={2.6} opacity={0.42} color="#4a3d2c" resolution={512} />
         </Suspense>
