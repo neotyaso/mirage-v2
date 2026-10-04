@@ -137,6 +137,7 @@ export function useFaceDetection(enabled: boolean = true) {
   const faceSizeRef = useRef(0);
   const eyeDistanceRef = useRef(0); // 主対象の眼間距離(IPD・正規化幅)。横顔等で取れない時は0
   const allEyeDistancesRef = useRef<number[]>([]); // 全顔分のIPD(visitorTrackerの多人数対応用)
+  const allFaceSizesRef = useRef<number[]>([]); // 全顔分の正規化幅(visitorTrackerの多人数対応用)
   const faceYawRef = useRef(0); // 主対象の頭の左右向き（ラジアン。0=正面、絶対値が大きいほどそっぽを向いている）
   const allFaceCentersRef = useRef<FaceCenter[]>([]);
   const allEyeCentersRef = useRef<FaceCenter[]>([]);
@@ -268,6 +269,7 @@ export function useFaceDetection(enabled: boolean = true) {
               ? rawIpd
               : eyeDistanceRef.current + (rawIpd - eyeDistanceRef.current) * FACE_SIZE_SMOOTHING;
           allEyeDistancesRef.current = eyeDistances;
+          allFaceSizesRef.current = widths;
 
           // 頭の向き(yaw)を主対象の顔変換行列から抽出（そっぽを向いたか判定するため）
           const matrixData = transforms[primaryIdx]?.data;
@@ -295,6 +297,7 @@ export function useFaceDetection(enabled: boolean = true) {
           faceSizeRef.current = 0;
           eyeDistanceRef.current = 0;
           allEyeDistancesRef.current = [];
+          allFaceSizesRef.current = [];
           faceYawRef.current = 0;
           allFaceCentersRef.current = [];
           allEyeCentersRef.current = [];
@@ -358,6 +361,7 @@ export function useFaceDetection(enabled: boolean = true) {
     faceSizeRef,
     eyeDistanceRef,
     allEyeDistancesRef,
+    allFaceSizesRef,
     faceYawRef,
     allFaceCentersRef,
     allEyeCentersRef,

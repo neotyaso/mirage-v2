@@ -3,6 +3,8 @@ import type { CSSProperties, RefObject } from "react";
 import { calibrateDistanceAt, estimateDistanceM, getDistanceK, getDistanceKipd, getDistanceZone } from "../hooks/useFaceDetection";
 import type { DistanceZone } from "../hooks/useFaceDetection";
 import type { ConversationEngine } from "../hooks/useConversationEngine";
+import type { VisitorTracker } from "../tracking/visitorTracker";
+import { BevMap } from "./BevMap";
 
 export interface DebugPanelProps {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -15,6 +17,7 @@ export interface DebugPanelProps {
   started: boolean;
   paused: boolean;
   eng: ConversationEngine;
+  trackerRef: RefObject<VisitorTracker | null>;
   onTogglePause: () => void;
 }
 
@@ -122,6 +125,9 @@ export function DebugPanel(props: DebugPanelProps) {
           )}
           <div style={{ marginTop: 2, opacity: 0.85 }}>
             dist: {dist === null ? "-" : `${dist.toFixed(2)}m`} | k={getDistanceK().toFixed(3)}/kI={getDistanceKipd().toFixed(3)} | ipd={snap.eyeDist.toFixed(3)} | c=2m校正
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <BevMap trackerRef={props.trackerRef} visible />
           </div>
         </div>
       )}

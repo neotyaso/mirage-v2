@@ -21,7 +21,7 @@ export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
 
-  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, ready: camReady, error: camError } =
+  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef, ready: camReady, error: camError } =
     useFaceDetection();
 
   const eng = useConversationEngine(speakingRef, volumeRef);
@@ -35,7 +35,7 @@ export default function App() {
     speak(text, speakingRef, volumeRef);
   }
 
-  useVisitorLoop({
+  const { trackerRef } = useVisitorLoop({
     started,
     paused,
     eng,
@@ -44,6 +44,9 @@ export default function App() {
     eyeDistanceRef,
     speakingRef,
     say,
+    allFaceCentersRef,
+    allFaceSizesRef,
+    allEyeDistancesRef,
   });
 
   function handleStart() {
@@ -103,6 +106,7 @@ export default function App() {
         started={started}
         paused={paused}
         eng={eng}
+        trackerRef={trackerRef}
         onTogglePause={togglePause}
       />
     </div>

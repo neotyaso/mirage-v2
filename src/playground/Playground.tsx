@@ -6,29 +6,42 @@ import { Avatar } from "../components/Avatar";
 import { useFaceDetection } from "../hooks/useFaceDetection";
 import type { FaceCenter } from "../hooks/useFaceDetection";
 import { generateVisionComment } from "../vision/visionComment";
+import { createVisitorTracker } from "../tracking/visitorTracker";
+import type { VisitorTracker } from "../tracking/visitorTracker";
+import { BevMap } from "../components/BevMap";
+import { ChatLog } from "../components/ChatLog";
+import { useConversationEngine } from "../hooks/useConversationEngine";
 
 // 試験用ページ。Avatarが実際に参照するものだけ渡す
-// （speaking/volume=リップシンク、faceCenter/eyeCenter=注視、stretch=ジェスチャー）。
-
-function VolumeDriver({ speaking, volumeRef }: { speaking: boolean; volumeRef: React.MutableRefObject<number> }) {
-  useFrame((state) => {
-    volumeRef.current = speaking ? 0.35 + 0.35 * Math.abs(Math.sin(state.clock.elapsedTime * 10)) : 0;
-  });
-  return null;
-}
-
 export function Playground() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
+  const eng = useConversationEngine(speakingRef, volumeRef);
   const faceCenterRef = useRef<FaceCenter | null>({ x: 0.5, y: 0.5 });
   const eyeCenterRef = useRef<FaceCenter | null>(null);
 
-  const [speaking, setSpeaking] = useState(false);
   const [gaze, setGaze] = useState<FaceCenter>({ x: 0.5, y: 0.5 });
   const [panelVisible, setPanelVisible] = useState(true);
 
   const [cameraOn, setCameraOn] = useState(false);
   const cam = useFaceDetection(cameraOn);
+
+  // BEV俯瞰デモ：実物のBevMapにモック2人分を給餌（カメラ不要）
+  const mockTrackerRef = useRef<VisitorTracker | null>(null);
+  if (mockTrackerRef.current === null) mockTrackerRef.current = createVisitorTracker();
+  const [bevDemo, setBevDemo] = useState(false);
+  useEffect(() => {
+    if (!bevDemo) return;
+    const t0 = performance.now();
+    const id = setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      mockTrackerRef.current?.update([
+        { x: 0.75 - 0.2 * Math.min(1, t / 12), y: 0.5, size: 0.2, d: Math.max(1.0, 4.5 - t * 0.3) },
+        { x: 0.3 + 0.08 * Math.sin(t * 0.8), y: 0.5, size: 0.15, d: 2.5 + 0.5 * Math.sin(t * 0.4) },
+      ], performance.now());
+    }, 250);
+    return () => clearInterval(id);
+  }, [bevDemo]);
 
   const [visionText, setVisionText] = useState<string>("");
   const [visionLoading, setVisionLoading] = useState(false);
@@ -60,28 +73,15 @@ export function Playground() {
     eyeCenterRef.current = null;
   }
 
-  const actionRef = useRef<{ tag: "stretch"; id: number } | null>(null);
-  function triggerStretch() {
-    actionRef.current = { tag: "stretch", id: -Date.now() };
-  }
-
-  function toggleSpeaking() {
-    const next = !speaking;
-    setSpeaking(next);
-    speakingRef.current = next;
-  }
-
   return (
     <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
       <Canvas camera={{ position: [0, 1.1, 3], fov: 35 }}>
-        {/* 背景は作り直し中のため無地。新背景は後で決める */}
         <color attach="background" args={["#ffffff"]} />
         <ambientLight intensity={0.9} />
         <directionalLight position={[2, 4, 3]} intensity={1.4} />
         <directionalLight position={[-3, 2, -2]} intensity={0.4} />
 
         <OrbitControls target={[0, 1, 0]} />
-        <VolumeDriver speaking={speaking} volumeRef={volumeRef} />
 
         <Suspense fallback={null}>
           <Avatar
@@ -89,10 +89,11 @@ export function Playground() {
             volumeRef={volumeRef}
             faceCenterRef={faceCenterRef}
             eyeCenterRef={eyeCenterRef}
-            actionRef={actionRef}
           />
         </Suspense>
       </Canvas>
+
+      {eng.displayLog.length > 0 && <ChatLog log={eng.displayLog} />}
 
       <video
         ref={cam.videoRef}
@@ -142,33 +143,23 @@ export function Playground() {
           </div>
         )}
 
-        {!cameraOn && (
-          <div style={rowStyle}>
-            <span style={labelStyle}>注視（手動）</span>
-            {(["x", "y"] as (keyof FaceCenter)[]).map((k) => (
-              <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ ...labelStyle, minWidth: 60, fontSize: 11 }}>{k} {gaze[k].toFixed(2)}</span>
-                <input
-                  type="range" min={0} max={1} step={0.01} value={gaze[k]}
-                  onChange={(e) => setGazeField(k, Number(e.target.value))} style={{ flex: 1 }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
         <div style={rowStyle}>
-          <span style={labelStyle}>発話中（リップシンク）</span>
-          <button onClick={toggleSpeaking} style={{ ...btnStyle, background: speaking ? "#ef4444" : "#374151" }}>
-            {speaking ? "■ 停止" : "▶ 話す"}
+          <span style={labelStyle}>Gemini会話（本番と同一engine・リップシンク連動）</span>
+          <button onClick={eng.toggleConversation} style={{ ...btnStyle, background: eng.activeConvState === "idle" ? "#8b5cf6" : "#ef4444" }}>
+            {eng.activeConvState === "idle" ? "🎤 会話開始" : eng.activeConvState === "listening" ? "👂 聴いてる…" : eng.activeConvState === "thinking" ? "💭 考え中…" : "🔊 喋ってる"}
           </button>
+          <span style={{ fontSize: 11, opacity: 0.7 }}>
+            {eng.engine} | {eng.geminiState} | turns={eng.geminiMetrics.turns}
+          </span>
+          {eng.failureNotice && <span style={{ fontSize: 11, color: "#fbbf24" }}>{eng.failureNotice}</span>}
         </div>
 
         <div style={rowStyle}>
-          <span style={labelStyle}>ジェスチャー（stretch.vrma）</span>
-          <button onClick={triggerStretch} style={{ ...btnStyle, background: "#374151" }}>
-            伸びる
+          <span style={labelStyle}>BEV俯瞰デモ（モック2人・実物BevMap）</span>
+          <button onClick={() => setBevDemo((v) => !v)} style={{ ...btnStyle, background: bevDemo ? "#ef4444" : "#374151" }}>
+            {bevDemo ? "■ BEV停止" : "▶ BEV表示"}
           </button>
+          {bevDemo && <BevMap trackerRef={mockTrackerRef} visible={bevDemo} />}
         </div>
       </div>
     </div>
