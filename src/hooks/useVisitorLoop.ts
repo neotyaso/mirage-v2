@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import { estimateDistanceM, getDistanceZone } from "./useFaceDetection";
+import { estimateDistanceM } from "./useFaceDetection";
 import type { FaceCenter } from "./useFaceDetection";
 import { CONVERSATION_START_LINES, FAREWELL_LINES } from "./useConversationEngine";
 import type { ConversationEngine } from "./useConversationEngine";
 import { createVisitorTracker } from "../tracking/visitorTracker";
 import type { VisitorTracker } from "../tracking/visitorTracker";
+import { ZONE_MID_M } from "../tracking/types";
 import { createEventLog } from "../tracking/eventLog";
 import type { EventLog } from "../tracking/eventLog";
 import type { FaceObservation } from "../tracking/types";
@@ -27,7 +28,7 @@ export interface VisitorLoopInput {
 }
 
 // 距離による会話の開始/終了の判断。150msごとにrefを読むだけ（再描画なし）。
-// mid/near到達で会話開始、不在が続けば切断＋別れの一言＋履歴リセット。
+// P3: d<=ZONE_MID_M(1.4m)で会話開始。不在が続けば切断＋別れの一言＋履歴リセット。
 // 同じ150ms tickで通行人トラッキングも回す（滞在=lastSeen-firstSeen、zones遷移、leave時にeventLogへ）。
 export function useVisitorLoop({ started, paused, eng, presentRef, faceSizeRef, eyeDistanceRef, speakingRef, say, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef }: VisitorLoopInput) {
   const activeConvState = eng.activeConvState;
@@ -46,7 +47,8 @@ export function useVisitorLoop({ started, paused, eng, presentRef, faceSizeRef, 
   useEffect(() => {
     const id = setInterval(() => {
       const p = presentRef.current;
-      const z = getDistanceZone(faceSizeRef.current, eyeDistanceRef.current);
+      const d = estimateDistanceM(faceSizeRef.current, eyeDistanceRef.current);
+      const inRange = d !== null && d <= ZONE_MID_M;
       const now = performance.now();
 
       // 通行人トラッキング（滞在・ゾーン遷移用）。会話の開始/終了とは独立に回す。
@@ -69,7 +71,7 @@ export function useVisitorLoop({ started, paused, eng, presentRef, faceSizeRef, 
 
       if (p) lastPresentAtRef.current = now;
       if (started && !paused) {
-        if ((z === "mid" || z === "near") && activeConvState === "idle") {
+        if (inRange && activeConvState === "idle") {
           // 会話開始の瞬間は必ず一言喋って「聞く態勢に入った」ことを分かりやすくする
           say(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)]);
           if (eng.engine === "local") {

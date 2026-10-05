@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
-import { calibrateDistanceAt, estimateDistanceM, getDistanceK, getDistanceKipd, getDistanceZone } from "../hooks/useFaceDetection";
+import { estimateDistanceM, getDistanceK, getDistanceKipd, getDistanceZone } from "../hooks/useFaceDetection";
 import type { DistanceZone } from "../hooks/useFaceDetection";
 import type { ConversationEngine } from "../hooks/useConversationEngine";
 import type { VisitorTracker } from "../tracking/visitorTracker";
@@ -21,7 +21,7 @@ export interface DebugPanelProps {
   onTogglePause: () => void;
 }
 
-// デバッグUI。dキーで表示切替、cキーで距離の設置時1点校正（今映っている顔を2mとみなす）。
+// デバッグUI。dキーで表示切替(P3: 固定k運用のためcキー校正は廃止)。
 // 表示用の値はAppの判断ロジックとは独立に、refを250ms間隔で読んで自前で持つ。
 // 検出用カメラもここでマウントする（顔検出が参照する実体。dキーで表示切替）。
 export function DebugPanel(props: DebugPanelProps) {
@@ -32,12 +32,10 @@ export function DebugPanel(props: DebugPanelProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "d") { setDebugMode((v) => !v); return; }
-      if (!debugMode) return; // 校正はデバッグHUD表示中のみ受け付ける（本番中の誤爆防止）
-      if (e.key === "c") { calibrateDistanceAt(faceSizeRef.current, 2, eyeDistanceRef.current); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [debugMode, faceSizeRef, eyeDistanceRef]);
+  }, [debugMode]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -124,7 +122,7 @@ export function DebugPanel(props: DebugPanelProps) {
             </div>
           )}
           <div style={{ marginTop: 2, opacity: 0.85 }}>
-            dist: {dist === null ? "-" : `${dist.toFixed(2)}m`} | k={getDistanceK().toFixed(3)}/kI={getDistanceKipd().toFixed(3)} | ipd={snap.eyeDist.toFixed(3)} | c=2m校正
+            dist: {dist === null ? "-" : `${dist.toFixed(2)}m`} | k={getDistanceK().toFixed(3)}/kI={getDistanceKipd().toFixed(3)} | ipd={snap.eyeDist.toFixed(3)}
           </div>
           <div style={{ marginTop: 6 }}>
             <BevMap trackerRef={props.trackerRef} visible />

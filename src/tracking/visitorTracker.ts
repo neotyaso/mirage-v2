@@ -48,10 +48,9 @@ const DEFAULT_VELOCITY_WINDOW_MS = 500;
 
 export function zoneForSize(size: number, d?: number | null): VisitorZone {
   if (size <= 0) return "absent";
+  // P3: m一本化。dなし観測はzoneForDの顔なし扱い("far")に合わせる。旧0.12/0.25閾値は廃止
   if (typeof d === "number") return zoneForD(d);
-  if (size < 0.12) return "far";
-  if (size < 0.25) return "mid";
-  return "near";
+  return "far";
 }
 
 function estimateVelocity(positions: PositionSample[], windowMs: number): { vx: number; vy: number } {

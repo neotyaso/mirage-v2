@@ -111,10 +111,13 @@ const eventLogMod = await import(pathToFileURL(eventLogFile).href);
   const moved = t2.update([{ x: 0.3, y: 0.5, size: 0.2 }], 500);
   assert(moved.active[0].velocity.vx > 0, "右移動で vx > 0（速度推定）");
 
-  // zone 判定：size 0.3 は near
+  // zone 判定：P3でm一本化。dなしはfar、dありはzoneForD
   const t3 = trackerMod.createVisitorTracker();
-  const near = t3.update([{ x: 0.5, y: 0.5, size: 0.3 }], 0);
-  assert(near.active[0].zones[0].zone === "near", "size 0.3 → near（useFaceDetection と同閾値）");
+  const near = t3.update([{ x: 0.5, y: 0.5, size: 0.3, d: 1.0 }], 0);
+  assert(near.active[0].zones[0].zone === "near", "d=1.0 → near");
+  const nod = trackerMod.createVisitorTracker();
+  const nodR = nod.update([{ x: 0.5, y: 0.5, size: 0.3 }], 0);
+  assert(nodR.active[0].zones[0].zone === "far", "dなし → far（旧顔幅閾値は廃止）");
 
   // m基準: dありはzoneForDで判定
   assert(trackerMod.zoneForSize(0.2, 1.0) === "near", "d=1.0 → near");

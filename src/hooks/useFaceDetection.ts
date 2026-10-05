@@ -30,73 +30,24 @@ export interface FaceExpression {
 // 目安: m基準のzoneForD(ZONE_FAR_M/ZONE_MID_M)に一本化
 export type DistanceZone = "far" | "mid" | "near" | "absent";
 
-// ---- 連続距離推定 D = k / faceSize (P3) ----
+// ---- 連続距離推定 D = k / faceSize (P3: 固定k運用) ----
 // ピンホール近似: faceSize ≒ f*W/(D*I) → D = k/faceSize (k=f*W/I)。
-// 既定k=0.36は旧閾値と整合する値(far 0.12→3.0m、mid 0.25→1.44m)。
-const DISTANCE_K_DEFAULT = 0.36;
-const DISTANCE_K_STORAGE_KEY = "mirage.distanceK";
-function loadDistanceK(): number {
-  try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DISTANCE_K_STORAGE_KEY) : null;
-    const v = raw !== null ? Number(raw) : NaN;
-    return Number.isFinite(v) && v > 0.05 && v < 2 ? v : DISTANCE_K_DEFAULT;
-  } catch {
-    return DISTANCE_K_DEFAULT;
-  }
-}
-let distanceK = loadDistanceK();
-
+// kはカメラ固定値なので現場校正なしで自動化する。人体側WはIPD実寸63mm(個人差±5%)に乗り、
+// カメラ側f/Iは同機種・同解像度なら不変のため。固定値の根拠: far 0.12→3.0m、mid 0.25→1.44mと旧閾値に整合。
+// ponytail: 機種変更でズレたらFOV由来k(k=W/(2*tan(FOV/2)))の計算で置換、それまでは固定値
+const DISTANCE_K = 0.36;
 // ---- IPD測距 D = k_ipd / ipd ----
 // 眼間距離(IPD実測≒63mm)は顔幅より個人差が小さい(±5% vs ±15%)ため主物差しにする。
-// 既定k_ipd=0.15は顔幅k=0.36との比(IPD/顔幅≒0.42)から整合させた値。cキー校正で上書きされる。
-const DISTANCE_K_IPD_DEFAULT = 0.15;
-const DISTANCE_K_IPD_STORAGE_KEY = "mirage.distanceKipd";
-function loadDistanceKipd(): number {
-  try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(DISTANCE_K_IPD_STORAGE_KEY) : null;
-    const v = raw !== null ? Number(raw) : NaN;
-    return Number.isFinite(v) && v > 0.02 && v < 1 ? v : DISTANCE_K_IPD_DEFAULT;
-  } catch {
-    return DISTANCE_K_IPD_DEFAULT;
-  }
-}
-let distanceKipd = loadDistanceKipd();
+const DISTANCE_K_IPD = 0.15;
 
 /** 現在のk_ipd。D = k_ipd / ipd。 */
 export function getDistanceKipd(): number {
-  return distanceKipd;
-}
-/** k_ipdを直接設定しlocalStorageに保存する。 */
-export function setDistanceKipd(k: number): void {
-  if (!Number.isFinite(k) || k <= 0) return;
-  distanceKipd = Math.min(1, Math.max(0.02, k));
-  try {
-    localStorage.setItem(DISTANCE_K_IPD_STORAGE_KEY, String(distanceKipd));
-  } catch { /* private mode等では保存を諦める */ }
+  return DISTANCE_K_IPD;
 }
 
 /** 現在のk(単位:m)。D = k / faceSize。 */
 export function getDistanceK(): number {
-  return distanceK;
-}
-/** kを直接設定しlocalStorageに保存する。 */
-export function setDistanceK(k: number): void {
-  if (!Number.isFinite(k) || k <= 0) return;
-  distanceK = Math.min(2, Math.max(0.05, k));
-  try {
-    localStorage.setItem(DISTANCE_K_STORAGE_KEY, String(distanceK));
-  } catch { /* private mode等では保存を諦める */ }
-}
-/**
- * 設置時1点校正: 実測距離metersMに立った時のfaceSizeから k = metersM * faceSize を決める。
- * 例: 2m地点で `calibrateDistanceAt(faceSizeRef.current, 2)`。false=顔なし等で校正不可。
- * ipd(眼間距離・正規化幅)を渡すとIPD側のkも同時校正する(横顔等でipd不正時は顔幅のみ)。
- */
-export function calibrateDistanceAt(faceSize: number, metersM: number, ipd?: number): boolean {
-  if (!Number.isFinite(faceSize) || faceSize <= 0.02 || !Number.isFinite(metersM) || metersM <= 0) return false;
-  setDistanceK(metersM * faceSize);
-  if (ipd !== undefined && Number.isFinite(ipd) && ipd > 0.015) setDistanceKipd(metersM * ipd);
-  return true;
+  return DISTANCE_K;
 }
 /**
  * 顔幅→推定距離m。顔なし(size<=0)はnull。
@@ -104,10 +55,10 @@ export function calibrateDistanceAt(faceSize: number, metersM: number, ipd?: num
  */
 export function estimateDistanceM(faceSize: number, ipd?: number): number | null {
   if (ipd !== undefined && Number.isFinite(ipd) && ipd > 0.015) {
-    return distanceKipd / Math.max(ipd, 1e-4);
+    return DISTANCE_K_IPD / Math.max(ipd, 1e-4);
   }
   if (!Number.isFinite(faceSize) || faceSize <= 0) return null;
-  return distanceK / Math.max(faceSize, 1e-4);
+  return DISTANCE_K / Math.max(faceSize, 1e-4);
 }
 // 連続接近度への写像範囲。D<=NEARで1(目の前)、D>=FARで0(奥)。
 export const DISTANCE_NEAR_M = 0.8;
