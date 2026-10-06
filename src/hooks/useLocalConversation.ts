@@ -17,9 +17,18 @@ export interface LocalLogEntry {
   text: string;
 }
 
-export function useLocalConversation(speak: (text: string) => Promise<void>) {
+export interface LocalMetrics {
+  sttMs: number | null;
+  llmMs: number | null;
+  ttsFirstMs: number | null;
+  turnMs: number | null;
+  turns: number;
+}
+
+export function useLocalConversation(speak: (text: string, onFirstAudio?: () => void) => Promise<void>) {
   const [state, setState] = useState<LocalConvState>("idle");
   const [log, setLog] = useState<LocalLogEntry[]>([]);
+  const [metrics, setMetrics] = useState<LocalMetrics>({ sttMs: null, llmMs: null, ttsFirstMs: null, turnMs: null, turns: 0 });
 
   const historyRef = useRef<ChatMessage[]>([]);
   const activeRef = useRef(false);
@@ -34,6 +43,7 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
   const loop = useCallback(async () => {
     const epoch = epochRef.current;
     while (activeRef.current && epoch === epochRef.current) {
+      const tTurn0 = performance.now();
       setState("listening");
       const text = await transcribeOnce(8000);
       if (!activeRef.current || epoch !== epochRef.current) break;
@@ -42,6 +52,7 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
         await new Promise((r) => setTimeout(r, 500));
         continue;
       }
+      const tStt = performance.now();
 
       pushLog("user", text);
       historyRef.current.push({ role: "user", content: text });
@@ -49,12 +60,22 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
       setState("thinking");
       try {
         const reply = await fetchOllamaChat(historyRef.current, new AbortController().signal);
+        const tLlm = performance.now();
         if (!activeRef.current || epoch !== epochRef.current) break;
         if (reply) {
           pushLog("assistant", reply);
           historyRef.current.push({ role: "assistant", content: reply });
           setState("speaking");
-          await speak(reply);
+          let tFirst = 0;
+          await speak(reply, () => { tFirst = performance.now(); });
+          const tEnd = performance.now();
+          setMetrics((m) => ({
+            sttMs: Math.round(tStt - tTurn0),
+            llmMs: Math.round(tLlm - tStt),
+            ttsFirstMs: tFirst ? Math.round(tFirst - tLlm) : null,
+            turnMs: Math.round(tEnd - tTurn0),
+            turns: m.turns + 1,
+          }));
         }
       } catch {
         // Ollama不通 → 次ターンで再試行（ループ継続）
@@ -92,5 +113,5 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
     logIdRef.current = 0;
   }, []);
 
-  return { state, log, start, stop, reset, injectContext };
+  return { state, log, metrics, start, stop, reset, injectContext };
 }

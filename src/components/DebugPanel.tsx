@@ -122,6 +122,9 @@ export function DebugPanel(props: DebugPanelProps) {
           <div style={{ marginTop: 2, opacity: 0.85 }}>
             m: connectMs={eng.geminiMetrics.connectMs ?? "-"} | firstAudioMs={eng.geminiMetrics.firstAudioMs ?? "-"} | turns={eng.geminiMetrics.turns} | disconnects={eng.geminiMetrics.disconnects}
           </div>
+          <div style={{ marginTop: 2, opacity: 0.85 }}>
+            local: stt={eng.localMetrics.sttMs ?? "-"} | llm={eng.localMetrics.llmMs ?? "-"} | tts1st={eng.localMetrics.ttsFirstMs ?? "-"} | turn={eng.localMetrics.turnMs ?? "-"} | n={eng.localMetrics.turns}
+          </div>
           {eng.failureNotice && (
             <div style={{ marginTop: 2, color: "#fbbf24" }}>
               fail: {eng.failureNotice}

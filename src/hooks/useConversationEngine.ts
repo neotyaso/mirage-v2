@@ -55,8 +55,8 @@ export function useConversationEngine(
   geminiInjectRef.current = gemini.injectContext;
 
   // ローカル会話の発話はtts.ts側(speakAndWait)。喋り終わりまで待って次ターンへ
-  const local = useLocalConversation(useCallback((t: string) =>
-    speakAndWait(t, speakingRef, volumeRef, 15000), [speakingRef, volumeRef]));
+  const local = useLocalConversation(useCallback((t: string, onFirst?: () => void) =>
+    speakAndWait(t, speakingRef, volumeRef, 15000, onFirst), [speakingRef, volumeRef]));
   const localRef = useRef(local);
   localRef.current = local;
   // 離脱/一時停止時に pending の local.start() を打ち消す用
@@ -243,6 +243,7 @@ export function useConversationEngine(
     geminiActive,
     via: gemini.via,
     localState: local.state,
+    localMetrics: local.metrics,
     localWantedRef,
     connect: stableConnect,
     disconnect: stableDisconnect,

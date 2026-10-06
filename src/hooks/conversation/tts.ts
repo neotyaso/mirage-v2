@@ -12,7 +12,7 @@ export function useVoiceWarmup(): void {
   }, []);
 }
 
-export function speakWithWebSpeech(text: string): Promise<void> {
+export function speakWithWebSpeech(text: string, onStart?: () => void): Promise<void> {
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "ja-JP";
@@ -20,6 +20,7 @@ export function speakWithWebSpeech(text: string): Promise<void> {
     u.pitch = 1.2;
     const jp = speechSynthesis.getVoices().find((v) => v.lang.startsWith("ja"));
     if (jp) u.voice = jp;
+    u.onstart = () => { onStart?.(); };
     u.onend = () => resolve();
     u.onerror = () => resolve();
     speechSynthesis.cancel();
@@ -62,11 +63,12 @@ export function speakAndWait(
   speakingRef: RefObject<boolean>,
   volumeRef: RefObject<number>,
   maxMs = 15000,
+  onFirstAudio?: () => void,
 ): Promise<void> {
   speakingRef.current = true;
   volumeRef.current = 0.6;
   const timeout = new Promise<void>((r) => setTimeout(r, maxMs));
-  return Promise.race([speakWithWebSpeech(text), timeout]).finally(() => {
+  return Promise.race([speakWithWebSpeech(text, onFirstAudio), timeout]).finally(() => {
     speakingRef.current = false;
     volumeRef.current = 0;
   });
