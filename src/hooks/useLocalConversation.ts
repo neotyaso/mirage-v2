@@ -64,11 +64,12 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
     if (epoch === epochRef.current) setState("idle");
   }, [pushLog, speak]);
 
-  const start = useCallback(() => {
+  const start = useCallback((context?: string) => {
     if (activeRef.current) return;
     activeRef.current = true;
     if (historyRef.current.length === 0) {
-      historyRef.current = [{ role: "system", content: SYSTEM_PROMPT }];
+      const suffix = context ? `\n[来場者状況: ${context}] この様子を踏まえて答えて。` : "";
+      historyRef.current = [{ role: "system", content: SYSTEM_PROMPT + suffix }];
     }
     void loop();
   }, [loop]);
@@ -79,11 +80,17 @@ export function useLocalConversation(speak: (text: string) => Promise<void>) {
     setState("idle");
   }, []);
 
+  /** 会話中の文脈追加（次ターン以降のhistoryに載る）。接近後の属性1枚推定用。 */
+  const injectContext = useCallback((text: string) => {
+    if (!activeRef.current) return;
+    historyRef.current.push({ role: "user", content: text });
+  }, []);
+
   const reset = useCallback(() => {
     historyRef.current = [];
     setLog([]);
     logIdRef.current = 0;
   }, []);
 
-  return { state, log, start, stop, reset };
+  return { state, log, start, stop, reset, injectContext };
 }

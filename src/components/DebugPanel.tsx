@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import { estimateDistanceM, getDistanceK, getDistanceKipd, getDistanceZone } from "../hooks/useFaceDetection";
-import type { DistanceZone } from "../hooks/useFaceDetection";
+import type { DistanceZone, FaceExpression } from "../hooks/useFaceDetection";
 import type { ConversationEngine } from "../hooks/useConversationEngine";
 import type { VisitorTracker } from "../tracking/visitorTracker";
 import { BevMap } from "./BevMap";
@@ -12,6 +12,8 @@ export interface DebugPanelProps {
   faceCountRef: RefObject<number>;
   faceSizeRef: RefObject<number>;
   eyeDistanceRef: RefObject<number>;
+  faceYawRef: RefObject<number>;
+  expressionRef: RefObject<FaceExpression>;
   camReady: boolean;
   camError: string | null;
   started: boolean;
@@ -25,9 +27,9 @@ export interface DebugPanelProps {
 // 表示用の値はAppの判断ロジックとは独立に、refを250ms間隔で読んで自前で持つ。
 // 検出用カメラもここでマウントする（顔検出が参照する実体。dキーで表示切替）。
 export function DebugPanel(props: DebugPanelProps) {
-  const { videoRef, presentRef, faceCountRef, faceSizeRef, eyeDistanceRef, eng } = props;
+  const { videoRef, presentRef, faceCountRef, faceSizeRef, eyeDistanceRef, faceYawRef, expressionRef, eng } = props;
   const [debugMode, setDebugMode] = useState(false);
-  const [snap, setSnap] = useState({ present: false, faces: 0, zone: "absent" as DistanceZone, faceSize: 0, eyeDist: 0 });
+  const [snap, setSnap] = useState({ present: false, faces: 0, zone: "absent" as DistanceZone, faceSize: 0, eyeDist: 0, yaw: 0, smile: 0, surprised: 0, confused: 0 });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -45,10 +47,14 @@ export function DebugPanel(props: DebugPanelProps) {
         zone: getDistanceZone(faceSizeRef.current, eyeDistanceRef.current),
         faceSize: faceSizeRef.current,
         eyeDist: eyeDistanceRef.current,
+        yaw: faceYawRef.current ?? 0,
+        smile: expressionRef.current?.smile ?? 0,
+        surprised: expressionRef.current?.surprised ?? 0,
+        confused: expressionRef.current?.confused ?? 0,
       });
     }, 250);
     return () => clearInterval(id);
-  }, [presentRef, faceCountRef, faceSizeRef, eyeDistanceRef]);
+  }, [presentRef, faceCountRef, faceSizeRef, eyeDistanceRef, faceYawRef, expressionRef]);
 
   const dist = estimateDistanceM(snap.faceSize, snap.eyeDist);
   const conv = eng.activeConvState;
@@ -123,6 +129,9 @@ export function DebugPanel(props: DebugPanelProps) {
           )}
           <div style={{ marginTop: 2, opacity: 0.85 }}>
             dist: {dist === null ? "-" : `${dist.toFixed(2)}m`} | k={getDistanceK().toFixed(3)}/kI={getDistanceKipd().toFixed(3)} | ipd={snap.eyeDist.toFixed(3)}
+          </div>
+          <div style={{ marginTop: 2, opacity: 0.85 }}>
+            expr: smile={snap.smile.toFixed(2)} surprised={snap.surprised.toFixed(2)} confused={snap.confused.toFixed(2)} yaw={snap.yaw.toFixed(2)}
           </div>
           <div style={{ marginTop: 6 }}>
             <BevMap trackerRef={props.trackerRef} visible />

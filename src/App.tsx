@@ -21,7 +21,7 @@ export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
 
-  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef, ready: camReady, error: camError } =
+  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef, faceYawRef, expressionRef, ready: camReady, error: camError } =
     useFaceDetection();
 
   const eng = useConversationEngine(speakingRef, volumeRef);
@@ -40,6 +40,8 @@ export default function App() {
     paused,
     eng,
     presentRef,
+    videoRef,
+    faceCenterRef,
     faceSizeRef,
     eyeDistanceRef,
     speakingRef,
@@ -47,6 +49,8 @@ export default function App() {
     allFaceCentersRef,
     allFaceSizesRef,
     allEyeDistancesRef,
+    faceYawRef,
+    expressionRef,
   });
 
   function handleStart() {
@@ -101,6 +105,8 @@ export default function App() {
         faceCountRef={faceCountRef}
         faceSizeRef={faceSizeRef}
         eyeDistanceRef={eyeDistanceRef}
+        faceYawRef={faceYawRef}
+        expressionRef={expressionRef}
         camReady={camReady}
         camError={camError}
         started={started}

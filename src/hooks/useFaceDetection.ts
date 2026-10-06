@@ -24,6 +24,7 @@ const RIGHT_EYE_INDICES = [362, 263];
 export interface FaceExpression {
   smile: number;    // 0〜1
   surprised: number; // 0〜1
+  confused: number; // 0〜1（困惑≒眉寄せ+口角下げ）
 }
 
 // 顔の正規化幅（0〜1）→距離の代理指標
@@ -92,7 +93,7 @@ export function useFaceDetection(enabled: boolean = true) {
   const faceYawRef = useRef(0); // 主対象の頭の左右向き（ラジアン。0=正面、絶対値が大きいほどそっぽを向いている）
   const allFaceCentersRef = useRef<FaceCenter[]>([]);
   const allEyeCentersRef = useRef<FaceCenter[]>([]);
-  const expressionRef = useRef<FaceExpression>({ smile: 0, surprised: 0 });
+  const expressionRef = useRef<FaceExpression>({ smile: 0, surprised: 0, confused: 0 });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -239,6 +240,7 @@ export function useFaceDetection(enabled: boolean = true) {
             expressionRef.current = {
               smile: blendshapeScore(cats, "mouthSmileLeft", "mouthSmileRight"),
               surprised: blendshapeScore(cats, "browInnerUp", "eyeWideLeft", "eyeWideRight"),
+              confused: blendshapeScore(cats, "browDownLeft", "browDownRight", "mouthFrownLeft", "mouthFrownRight"),
             };
           }
         } else {
@@ -252,7 +254,7 @@ export function useFaceDetection(enabled: boolean = true) {
           faceYawRef.current = 0;
           allFaceCentersRef.current = [];
           allEyeCentersRef.current = [];
-          expressionRef.current = { smile: 0, surprised: 0 };
+          expressionRef.current = { smile: 0, surprised: 0, confused: 0 };
         }
 
         presentRef.current = now - lastSeen < ABSENCE_GRACE_MS;

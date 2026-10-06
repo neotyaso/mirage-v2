@@ -51,6 +51,8 @@ export function useConversationEngine(
   geminiDisconnectRef.current = gemini.disconnect;
   const geminiResetRef = useRef(gemini.resetTranscript);
   geminiResetRef.current = gemini.resetTranscript;
+  const geminiInjectRef = useRef(gemini.injectContext);
+  geminiInjectRef.current = gemini.injectContext;
 
   // ローカル会話の発話はtts.ts側(speakAndWait)。喋り終わりまで待って次ターンへ
   const local = useLocalConversation(useCallback((t: string) =>
@@ -72,12 +74,12 @@ export function useConversationEngine(
             ? "listening"
             : "idle";
 
-  function startLocal() {
+  function startLocal(context?: string) {
     if (localWantedRef.current) return;
     localWantedRef.current = true;
     // 開始一言(speak)がマイクに漏れるので再生完了後にlisten開始
     void waitUntilNotSpeaking(speakingRef, 8000).then(() => {
-      if (localWantedRef.current) localRef.current.start();
+      if (localWantedRef.current) localRef.current.start(context);
     });
   }
 
@@ -103,14 +105,14 @@ export function useConversationEngine(
     setTimeout(() => { geminiIntentionalRef.current = false; }, 1000);
   }
 
-  async function connectRobust() {
+  async function connectRobust(context?: string) {
     if (geminiRetryingRef.current) return;
     if (gemini.state !== "disconnected" && gemini.state !== "error") return;
     geminiRetryingRef.current = true;
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          await geminiConnectRef.current();
+          await geminiConnectRef.current(context);
           geminiFailCountRef.current = 0;
           setFailureNotice(null);
           if (engineRef.current === "local") {
@@ -139,10 +141,15 @@ export function useConversationEngine(
   // interval・ボタンから呼ぶ操作はref経由で安定化（gemini.connectの同一性がmicLevel更新で変わるため）
   const connectRobustRef = useRef(connectRobust);
   connectRobustRef.current = connectRobust;
-  const stableConnect = useCallback(() => { void connectRobustRef.current(); }, []);
+  const stableConnect = useCallback((context?: string) => { void connectRobustRef.current(context); }, []);
   const stableDisconnect = useCallback(() => { disconnectIntentional(); }, []);
-  const stableStartLocal = useCallback(() => { startLocal(); }, []);
+  const stableStartLocal = useCallback((context?: string) => { startLocal(context); }, []);
   const stableStopLocal = useCallback((reset: boolean) => { stopLocal(reset); }, []);
+  function injectContext(text: string) {
+    if (engineRef.current === "local") localRef.current.injectContext(text);
+    else if (geminiActiveRef.current) geminiInjectRef.current(text);
+  }
+  const stableInject = useCallback((text: string) => { injectContext(text); }, []);
 
   function speakStartLine() {
     speak(CONVERSATION_START_LINES[Math.floor(Math.random() * CONVERSATION_START_LINES.length)], speakingRef, volumeRef);
@@ -241,6 +248,7 @@ export function useConversationEngine(
     disconnect: stableDisconnect,
     startLocal: stableStartLocal,
     stopLocal: stableStopLocal,
+    injectContext: stableInject,
     endConversation: stableEnd,
     suspend: stableSuspend,
     resetAll: stableResetAll,

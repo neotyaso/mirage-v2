@@ -35,6 +35,11 @@ const SYSTEM_PROMPT =
   "あなたは展示ブースの明るい受付嬢レムです。日本語で、短く元気に話します。" +
   "一文は40文字以内。相手の話に具体的に反応し、質問で会話を続けます。";
 
+function systemPromptWith(context?: string): string {
+  if (!context) return SYSTEM_PROMPT;
+  return `${SYSTEM_PROMPT}\n[来場者状況: ${context}] この様子を踏まえて第一声を調整して。`;
+}
+
 interface UseGeminiLiveOptions {
   onStateChange?: (s: GeminiState) => void;
   onError?: (e: Error) => void;
@@ -307,7 +312,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
   }, []);
 
   const connect = useCallback(
-    async () => {
+    async (context?: string) => {
     try {
       sessionRef.current?.close();
     } catch {
@@ -336,7 +341,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
       model: MODEL,
       config: {
         responseModalities: [Modality.AUDIO],
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: systemPromptWith(context),
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
@@ -376,6 +381,18 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     }
     sessionRef.current = session;
   }, [setStateSafe, handleServerMessage, startCapture]);
+
+  /** 会話中の文脈追加（応答を誘発しない）。接近後の属性1枚推定用。 */
+  const injectContext = useCallback((text: string) => {
+    try {
+      sessionRef.current?.sendClientContent({
+        turns: [{ role: "user", parts: [{ text }] }],
+        turnComplete: false,
+      });
+    } catch (e) {
+      console.error("[Gemini] inject failed:", e);
+    }
+  }, []);
 
   /** 手動ターン確定 */
   const commitUtterance = useCallback(() => {
@@ -430,6 +447,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     connect,
     disconnect,
     commitUtterance,
+    injectContext,
     resetTranscript,
     log,
     metrics,
