@@ -63,6 +63,12 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
   useEffect(() => {
     hasLogRef.current = eng.displayLog.length > 0;
   }, [eng.displayLog]);
+  // P6: local遅延metricsをtick側で読む用。visitorIdは付けない(遅延はセッション単位の統計値のため)
+  const localMetricsRef = useRef(eng.localMetrics);
+  const lastLatencyTurnRef = useRef(0);
+  useEffect(() => {
+    localMetricsRef.current = eng.localMetrics;
+  }, [eng.localMetrics]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -94,6 +100,16 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
         for (const v of left) {
           eventLog.append("leave", v.id, { stayMs: v.lastSeenMs - v.firstSeenMs }, { t: now });
         }
+      }
+
+      // P6: localターン確定で遅延3区間をeventLogへ(中央値集計用)。gemini本線はS2Sで分離不可のため対象外
+      const latencyLog = eventLogRef.current;
+      const lm = localMetricsRef.current;
+      if (latencyLog && lm.turns > lastLatencyTurnRef.current) {
+        lastLatencyTurnRef.current = lm.turns;
+        if (lm.sttMs !== null) latencyLog.append("stt_final", null, { ms: lm.sttMs, turn: lm.turns });
+        if (lm.llmMs !== null) latencyLog.append("llm_first_token", null, { ms: lm.llmMs, turn: lm.turns });
+        if (lm.ttsFirstMs !== null) latencyLog.append("tts_first_audio", null, { ms: lm.ttsFirstMs, turn: lm.turns, turnMs: lm.turnMs });
       }
 
       if (p) lastPresentAtRef.current = now;

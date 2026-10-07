@@ -64,7 +64,10 @@ export type TrackEventType =
   | "conversation_start"
   | "conversation_end"
   | "stop"
-  | "leave";
+  | "leave"
+  | "stt_final"
+  | "llm_first_token"
+  | "tts_first_audio";
 
 /**
  * 時系列ログの1イベント。

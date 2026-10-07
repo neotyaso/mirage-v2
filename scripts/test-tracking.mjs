@@ -40,6 +40,9 @@ mustContain("types.ts", "conversation_start", "conversation_start イベント�
 mustContain("types.ts", "conversation_end", "conversation_end イベント種別");
 mustContain("types.ts", '"stop"', "stop イベント種別");
 mustContain("types.ts", '"leave"', "leave イベント種別");
+mustContain("types.ts", '"stt_final"', "stt_final イベント種別（P6遅延計測）");
+mustContain("types.ts", '"llm_first_token"', "llm_first_token イベント種別（P6遅延計測）");
+mustContain("types.ts", '"tts_first_audio"', "tts_first_audio イベント種別（P6遅延計測）");
 mustContain("types.ts", "variant", "ABテスト用 variant");
 mustContain("visitorTracker.ts", "createVisitorTracker", "createVisitorTracker 公開");
 mustContain("visitorTracker.ts", "update(faces", "update(faces, nowMs) 公開");
@@ -185,6 +188,17 @@ const eventLogMod = await import(pathToFileURL(eventLogFile).href);
 
   const empty = eventLogMod.createEventLog();
   assert(empty.toJsonl() === "", "空ログの toJsonl は空文字");
+
+  // P6: 遅延3区間の記録とJSONL往復
+  const lat = eventLogMod.createEventLog({ clock: () => 5000 });
+  lat.append("stt_final", null, { ms: 1200, turn: 1 });
+  lat.append("llm_first_token", null, { ms: 800, turn: 1 });
+  lat.append("tts_first_audio", null, { ms: 300, turn: 1, turnMs: 2300 });
+  assert(lat.size === 3, "遅延3イベントが蓄積される");
+  const latParsed = lat.toJsonl().trim().split("\n").map((l) => JSON.parse(l));
+  assert(latParsed[0].type === "stt_final" && latParsed[0].data.ms === 1200, "stt_final のmsが保持される");
+  assert(latParsed[1].type === "llm_first_token" && latParsed[1].data.turn === 1, "llm_first_token のturnが保持される");
+  assert(latParsed[2].type === "tts_first_audio" && latParsed[2].visitorId === null, "tts_first_audio はvisitorId null");
 }
 
 // ---- 5. 結果 ----
