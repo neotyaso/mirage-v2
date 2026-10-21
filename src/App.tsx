@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { Avatar2D } from "./components/Avatar2D";
-import { SurroundView } from "./components/SurroundView";
 import { DebugPanel } from "./components/DebugPanel";
 import { ChatLog } from "./components/ChatLog";
 import { FallbackBanner } from "./components/FallbackBanner";
@@ -70,9 +69,8 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#070a0e" }}>
-      {/* 周囲ビュー（Tesla風BEV）。アバターの後ろに敷く */}
-      <SurroundView trackerRef={trackerRef} />
+    <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
+      {/* 背景は作り直し中のため無地。新背景は後で決める */}
       <Avatar2D speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} paused={paused} />
 
       {/* 会話ログ（左側に流れるチャット） */}
