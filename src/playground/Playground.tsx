@@ -1,8 +1,6 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { Avatar } from "../components/Avatar";
+import { Avatar2D } from "../components/Avatar2D";
 import { useFaceDetection } from "../hooks/useFaceDetection";
 import type { FaceCenter } from "../hooks/useFaceDetection";
 import { generateVisionComment } from "../vision/visionComment";
@@ -75,23 +73,7 @@ export function Playground() {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
-      <Canvas camera={{ position: [0, 1.1, 3], fov: 35 }}>
-        <color attach="background" args={["#ffffff"]} />
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[2, 4, 3]} intensity={1.4} />
-        <directionalLight position={[-3, 2, -2]} intensity={0.4} />
-
-        <OrbitControls target={[0, 1, 0]} />
-
-        <Suspense fallback={null}>
-          <Avatar
-            speakingRef={speakingRef}
-            volumeRef={volumeRef}
-            faceCenterRef={faceCenterRef}
-            eyeCenterRef={eyeCenterRef}
-          />
-        </Suspense>
-      </Canvas>
+      <Avatar2D speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} />
 
       {eng.displayLog.length > 0 && <ChatLog log={eng.displayLog} />}
 
