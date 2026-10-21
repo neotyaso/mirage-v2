@@ -41,14 +41,20 @@ const DISTANCE_K = 0.36;
 // 眼間距離(IPD実測≒63mm)は顔幅より個人差が小さい(±5% vs ±15%)ため主物差しにする。
 const DISTANCE_K_IPD = 0.15;
 
-/** 現在のk_ipd。D = k_ipd / ipd。 */
+// ---- 実測補正（2026-10-21）----
+// 展示カメラでHUDと実測を突き合わせたところ、推定が約2倍に出ていた。
+// 誤差は距離に比例する（一定倍率）ので、kは据え置きこの1箇所で補正する。
+// HUDの値を半分にしたい → 0.5 / 2倍にしたい → 2
+const DISTANCE_CALIBRATION = 0.47;
+
+/** 実際に効いているk_ipd。D = k_ipd / ipd。 */
 export function getDistanceKipd(): number {
-  return DISTANCE_K_IPD;
+  return DISTANCE_K_IPD * DISTANCE_CALIBRATION;
 }
 
-/** 現在のk(単位:m)。D = k / faceSize。 */
+/** 実際に効いているk(単位:m)。D = k / faceSize。 */
 export function getDistanceK(): number {
-  return DISTANCE_K;
+  return DISTANCE_K * DISTANCE_CALIBRATION;
 }
 /**
  * 顔幅→推定距離m。顔なし(size<=0)はnull。
@@ -56,10 +62,10 @@ export function getDistanceK(): number {
  */
 export function estimateDistanceM(faceSize: number, ipd?: number): number | null {
   if (ipd !== undefined && Number.isFinite(ipd) && ipd > 0.015) {
-    return DISTANCE_K_IPD / Math.max(ipd, 1e-4);
+    return (DISTANCE_K_IPD / Math.max(ipd, 1e-4)) * DISTANCE_CALIBRATION;
   }
   if (!Number.isFinite(faceSize) || faceSize <= 0) return null;
-  return DISTANCE_K / Math.max(faceSize, 1e-4);
+  return (DISTANCE_K / Math.max(faceSize, 1e-4)) * DISTANCE_CALIBRATION;
 }
 // 連続接近度への写像範囲。D<=NEARで1(目の前)、D>=FARで0(奥)。
 export const DISTANCE_NEAR_M = 0.8;
