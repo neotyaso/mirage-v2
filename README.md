@@ -11,7 +11,7 @@
 | --- | --- |
 | カメラ → 顔検出 → 距離推定 → 接近判定 | 動作中（150ms ループ） |
 | 音声対話（Gemini Live）＋ 割り込み | 動作中 |
-| フォールバック（Gemini → Groq → ローカル） | 動作中（3 リトライ→切替→バナー→手動復帰） |
+| フォールバック（Gemini → Ollama＋Web Speech） | 動作中（3 リトライ→切替→バナー→手動復帰） |
 | トラッキング ＋ イベントログ（JSONL） | 動作中 |
 | 俯瞰マップ（BEV 風 2D） | 動作中 |
 | 映像理解（表情/服装 → 会話文脈へ注入） | 動作中 |
@@ -48,13 +48,11 @@ pnpm health     # サービスのヘルスチェック
 
 | サービス | 役割 | ポート / 接続先 |
 | --- | --- | --- |
-| Vite dev | フロント＋proxy | `5173` |
+| Vite dev | フロント＋Ollama proxy | `5173` |
 | カメラ／マイク | 顔検出・音声 | ブラウザ `getUserMedia`（許可必須） |
 | Gemini Live | 本線 S2S 会話（STT+LLM+TTS） | ブラウザ直叩き（`VITE_GEMINI_API_KEY`） |
-| Groq | フォールバック STT / LLM / vision | `/groq` へ proxy |
-| AivisSpeech | Groq 経路の TTS（任意、無ければ Web Speech） | `10101` |
-| ローカル STT | STT フォールバック | `8000` |
-| Ollama | LLM フォールバック | `11434` |
+| Ollama | フォールバック LLM（任意） | `11434`（`/ollama` へ proxy） |
+| Web Speech API | フォールバック STT／TTS（任意） | ブラウザ内蔵（ポート不要） |
 
 ## テスト
 
@@ -92,13 +90,13 @@ mirage-v2/
 ├── docs/                       # 仕様（正本）
 │   ├── requirements.md         # 要件定義 ＋ 完了条件（DoD）
 │   ├── decisions.md            # 設計判断（有効なもの・理由つき）
-│   └── roadmap.md              # ロードマップ（状態・依存・着手順）
+│   ├── roadmap.md              # ロードマップ（状態・依存・着手順）
+│   └── NEXT.md                 # 再開メモ（読む順・次にやること）
 ├── records/                    # 記録（指示ではない）
 │   ├── history.md              # 日付つきの作業ログ・経緯・相談ログ
 │   └── portfolio.md            # 開発記録（ポートフォリオ用）
 ├── studio/                     # 別 Next.js アプリ（create-next-app ベース）
 │   └── studio.md               # 開発方針・依頼の粒度
-├── NEXT.md                     # 再開メモ（読む順・次にやること）
 └── scripts/                    # dev.mjs / health-check.mjs / test-*.mjs
 ```
 
@@ -112,7 +110,7 @@ mirage-v2/
 | コードの構造・動作 | コードと [docs/requirements.md](docs/requirements.md) §2（実装箇所の表） |
 | 過去の経緯 | [records/history.md](records/history.md) |
 | ポートフォリオ用 | [records/portfolio.md](records/portfolio.md) |
-| 作業の続きから | [NEXT.md](NEXT.md) |
+| 作業の続きから | [docs/NEXT.md](docs/NEXT.md) |
 
 ## 開発方針
 

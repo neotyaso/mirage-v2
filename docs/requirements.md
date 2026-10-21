@@ -32,7 +32,7 @@ Mirage は、AI と音声で自然に会話でき、カメラなどを利用し�
 | アプリ | 既存の Mirage がある | `src/App.tsx` |
 | フロントエンド | React + TypeScript（Vite） | `src/` |
 | 音声 AI | Gemini Flash Live を利用した音声対話 | `src/hooks/useGeminiLive.ts` |
-| フォールバック経路 | Groq STT + LLM + TTS（`conversation/{stt,llm,tts}.ts`） | `src/hooks/useConversationEngine.ts` ほか |
+| フォールバック経路 | STT + LLM + TTS（`conversation/{stt,llm,tts}.ts`） | `src/hooks/useConversationEngine.ts` ほか |
 | 割り込み対応 | 会話中の割り込みを考慮した実装 | `src/hooks/` |
 | カメラ | カメラを利用する機能が実装済み | `src/hooks/useFaceDetection.ts` |
 | 位置・距離関連 | 顔サイズ/眼間距離から距離を自己推定＋実測補正係数 0.47 | `src/hooks/useFaceDetection.ts` |
@@ -283,7 +283,7 @@ AI が会話内容を一時的に扱うだけでなく、必要な情報を継�
 - [ ] 構造化ログ（JSONL）が出力され、P1 の eventLog と項目が揃っている
 - [ ] 後からエラーと遅延を一覧・集計できる
 - [ ] デプロイが 1 コマンド or 1 操作で再現できる
-- [ ] 障害時の調査手順が `docs/runtime.md` に書かれている
+- [ ] 障害時の調査手順が `README.md` の「展示前チェックリスト」に書かれている
 
 ### P16 負荷・長時間稼働テスト ＋ 前後比較
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * mirage one-shot launcher (Windows / M1 Mac 共通)。
- * vite(:5173) を起動する。AivisSpeech は外部アプリ前提のため警告のみ。
+ * vite(:5173) を起動する。Ollama（LLMフォールバック, :11434）は任意。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -11,12 +11,12 @@ import { fileURLToPath } from "node:url";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const VITE_URL = "http://localhost:5173/";
-const AIVIS_URL = "http://localhost:10101/speakers";
+const OLLAMA_URL = "http://localhost:11434/api/tags";
 
 // scripts/health-check.mjs と共有する唯一のURL定義。追加・変更はここだけに行う。
 export const SERVICE_URLS = {
   vite: VITE_URL,
-  aivis: AIVIS_URL,
+  ollama: OLLAMA_URL,
 };
 
 export async function health(url, timeoutMs = 4000) {
@@ -31,8 +31,8 @@ export async function health(url, timeoutMs = 4000) {
 async function main() {
   console.log("mirage startup check");
 
-  if (!(await health(AIVIS_URL))) console.log("[ -- ] AivisSpeechなし。起動は任意 (VOICEVOX等でも可)");
-  else console.log("[ OK ] AivisSpeech 応答あり");
+  if (!(await health(OLLAMA_URL))) console.log("[ -- ] Ollamaなし。フォールバック LLM は無効（Gemini Live のみ）");
+  else console.log("[ OK ] Ollama 応答あり");
 
   if (await health(VITE_URL)) {
     console.log("[ OK ] vite 起動済み。再利用する");
