@@ -45,7 +45,7 @@ const DISTANCE_K_IPD = 0.15;
 // 展示カメラでHUDと実測を突き合わせたところ、推定が約2倍に出ていた。
 // 誤差は距離に比例する（一定倍率）ので、kは据え置きこの1箇所で補正する。
 // HUDの値を半分にしたい → 0.5 / 2倍にしたい → 2
-const DISTANCE_CALIBRATION = 0.5;
+const DISTANCE_CALIBRATION = 0.4;
 
 /** 実際に効いているk_ipd。D = k_ipd / ipd。 */
 export function getDistanceKipd(): number {
