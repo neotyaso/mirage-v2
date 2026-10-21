@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Avatar2D } from "../components/Avatar2D";
+import { SurroundView } from "../components/SurroundView";
 import { useFaceDetection } from "../hooks/useFaceDetection";
 import type { FaceCenter } from "../hooks/useFaceDetection";
 import { generateVisionComment } from "../vision/visionComment";
@@ -73,6 +74,7 @@ export function Playground() {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
+      <SurroundView trackerRef={mockTrackerRef} />
       <Avatar2D speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} />
 
       {eng.displayLog.length > 0 && <ChatLog log={eng.displayLog} />}
