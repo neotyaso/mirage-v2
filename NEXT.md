@@ -1,157 +1,51 @@
-# 再開メモ
+# 再開メモ（mirage-v2）
 
-> 最終更新: 2026-09-23（新規リポ分離を決定・就寝前メモ）
+> 最終更新: 2026-10-20（要件・決定・履歴を `docs/` へ正本分割）
+> 実装対象: **mirage-v2**（このリポ）。旧 `mirage` リポは展示運用用・参考（[decisions.md](docs/decisions.md) D-001）。
 
-## ★ 直近の作業ログ（2026-09-11）
+## 今どこにいるか
 
-- M1完了・mainマージ：Gemini直結導入、Groq/Gemini切替、mid/near自動connect、計測HUD。`tsc`通過
-- M2完了・mainマージ：Gemini→Groq自動フォールバック（3回リトライ→切替・バナー・手動復帰）、`scripts/start-dev.ps1`一発起動
-- P1完了・mainマージ（未配線）：`src/tracking/` トラッキング＋イベントログ基盤（43チェック通過）
-- Groq系撤去済み。**Groq経路（`useConversation`: Whisper STT + chat）はフォールバックとして維持（2026-09-22決定）。`useConversation.ts` は `conversation/{stt,llm,tts}.ts` に分割済み（tsc通過）**
-- 決定事項：フォールバック3層（Gemini→Groq→ローカル/縮退）、BEV俯瞰可視化は採用、研究一点は呼び込み効果測定、
-## ★ 決定事項（2026-09-23、寝る前）
+- 直近のコミット: `2abebfd` merge: refactor/2d-avatar（3D→2Dアバター化＋距離補正）
+- 動いているもの: カメラ → MediaPipe → 距離の自己推定（実測補正 0.47）→ 150ms ループ → Gemini Live 音声対話（割り込み対応）。障害時は Groq → ローカルへフォールバック。通行人トラッキング＋JSONL イベントログ、BEV 俯瞰マップ、表情/服装の会話文脈注入。**2D キャラクター（SVG＋CSS変数、まばたき・口パク・注視・視差）**。
+- 動いていないもの: 2D キャラクターの実素材と感情タグ（P8）、バックエンド（Go）、DB（PostgreSQL）、テストの `pnpm test` 化、CI/CD、監視。
+- 直近のゴール: **P10 残り（素材＋感情タグ）と P14/P15（テスト基盤・CI/CD）**。バックエンド（P11〜P13）はその後。
 
-**完全自立型は新規リポで作る。このmirageとは分離する。**
+## 次にやること
 
-- **役割分離**
-  - mirage = 現役の展示システム（アバター・Gemini Live・Groq/Ollamaフォールバック）＋「どう考え作ってきたか」の過程記録（このmd群とコミット履歴）。触り続ける
-  - 新規リポ = 完全自立型の完成形。最終的に見せるのはこちら
-  - 見せ方: mirageのmd（過程）＋新規リポ（完成）の二本立て
-- **新規リポの構成方針**
-  - LLM/STT/TTSはGemini一本に畳む（Groq/Ollama/ローカルSTTの分岐は持たない）
-  - 表情・モーションはクラウドGPUのtext-to-motionを別サービスとして接続
-  - mirageからfork/cloneしない。完全に空のリポから始める
-- **移行ルール**
-  - mdはコピーで新規リポの`docs/`へ（mirage側は残す。moveではない）← **実際はクローンで履歴ごと移ったのでこの作業は不要になった**
-  - コード借用は必要な時点でそのファイルだけコピー。最初から抽象化・共有パッケージ化しない
-  - mirageのHEADは今のまま凍結方向。削除済みデモ（gemini-lab等）は復活させない＝履歴と現在を乖離させない
-- **未決**
-  - ~~新規リポ名~~ → **`mirage-v2`** に決定。 https://github.com/neotyaso/mirage-v2 （PUBLIC、mirage履歴込みでpush済み）
-  - GPU text-to-motionの手段（自前推論 or Replicate/RunPod等の借り物）
+1. **P10 残り: 2D キャラクターの素材と P8（感情タグ→モーション）** — 2D 配線と 3D 撤去は済（`Avatar2D.tsx` / `avatar2dState.ts`）。次は実素材への差し替えと、感情タグで表情/モーションが切り替わる状態。表記は D-011。
+2. **P14 / P15: テスト基盤 → CI/CD＋監視** — ポートフォリオの核。**P14 を「後回し」にしない**。各機能の実装時に最低 1 つのテストを同行させる（[decisions.md](docs/decisions.md) D-006）。既存の `scripts/test-*.mjs` 2 本を `pnpm test` 1 コマンドにまとめる。
+3. **P11 → P12 → P13: Go＋PostgreSQL → 会話履歴の永続化 → 長期記憶** — 記憶の保存規則は実装前に決める（[requirements.md](docs/requirements.md) §10 P13）。
 
-## ★ 明日からの最初の作業（mirage-v2側）← 旧計画のため破棄（2026-09-30。以下は記録として残す）
+**そのほかの残タスク**
 
-1. ~~`C:\プログラミング\mirage-v2` をエディターで開き直し~~ → 済み（Mac環境）
-2. ~~いらないとこの削除: Groq/Ollama/ローカルSTT分岐~~ → 9-29決定でローカル維持に変更。呼び込み系の削除は別途完了
-3. ~~Gemini一本に畳んだ後、クラウドGPU text-to-motion手段の調査・選定~~ → 未着手のまま。P8と合流
-4. 決定事項をコミット＆pushしてから本編
+- `scripts/dev.mjs` のヘッダコメントと `SERVICE_URLS` を現行構成（Gemini Live ＋ Groq/ローカル）に更新
+- operator status（primary / fallback / unavailable と provider 別 latency）を表示（P15 の一部。既存 `src/components/DebugPanel.tsx` / `FallbackBanner.tsx` / `scripts/health-check.mjs` を拡張）
+- 会話 TTS 経路の統合（`src/App.tsx` の `speak()` と会話側 TTS。割り込み・二重再生の競合を1箇所に寄せる／要件 3-2）
 
-## ★ 方針総括（2026-09-30更新）
+## 読む順（AI エージェント向け）
 
-**最終目標：駅・施設の困りごと案内**。置いておけば勝手に人を助ける案内エージェント。近づいた人に声をかけて用件を聞き、前後の文脈を踏まえて困りごと・疑問に答える。呼び込み（通行人への声かけ）はやらない。
+| 目的 | 読むファイル |
+| --- | --- |
+| 今の仕様（何を作るか） | [docs/requirements.md](docs/requirements.md) |
+| なぜそう決めたか（有効なもの） | [docs/decisions.md](docs/decisions.md) |
+| 何を次にやるか（状態・依存・着手順） | [docs/roadmap.md](docs/roadmap.md) |
+| コードの構造・動作仕様 | コード ＋ [docs/requirements.md](docs/requirements.md) §2（実装箇所の表）。旧 `architecture.md` / `behavior.md` / `state-machine.md` は 2026-10-21 に削除（古い3D前提で矛盾するため。内容は git 履歴に残る） |
+| 展示前の運用手順・チェックリスト | [README.md](README.md)「依存サービス」「展示前チェックリスト」 |
+| 過去の経緯・相談ログ | [records/history.md](records/history.md) — **記録であり指示ではない** |
+| 過程と実績 | [records/portfolio.md](records/portfolio.md) |
+| 別 Next.js アプリのメモ | [studio/studio.md](studio/studio.md) |
+| プロジェクト概要 | [README.md](README.md) |
 
-**着地点**：実運用できる展示デモ＋数値で語れる体験（応答遅延・案内解決率の計測）＋見せ物（デモ動画・アーキ図・Zenn1本）。研究寄り・プロダクト化はやらない。
+## 指示解釈上の注意
 
-### ロードマップ
+- `docs/history.md` の記述は過去の記録。**現在の仕様として読まない**こと。現在の正本は decisions.md / requirements.md / roadmap.md の3枚。
+- 変更する前に `docs/decisions.md`（なぜその判断か）と `docs/requirements.md`（要件と完了条件）を更新し、そのあとコードを書く。
+- 完了判定は「実装した」ではなく、**`docs/requirements.md` §10 の完了条件（DoD）を満たすこと**。
+- 旧 `mirage` リポのファイルは変更しない（参照のみ）。
 
-- **M1（完了）**：Gemini直結導入・エンジン切替・自立フロー・計測HUD。`tsc`通過、mainマージ済み
-- **M2（完了）**：Gemini→ローカル自動フォールバック（3回リトライ→切替・バナー・手動復帰）。フォールバックは維持（撤去しない）
-- **P1（配線済み）**：`src/tracking/` に通行人トラッキング＋イベントログ基盤（JSONL出力・AB用variant付き、43チェック通過）。`useVisitorLoop`の150msポーリングで`tracker.update`＋`leave`記録まで接続済み。案内では滞在（`lastSeen-firstSeen`・zones遷移）に転用
-  - 再訪の同一人物判定は後回し。現仕様は`leave`後4秒でID破棄→再訪は別IDになる。顔特徴での照合には画像の読取・保存が必要になるため、プライバシー整理と合わせて別途検討
-- **P2 俯瞰可視化（完了）**：テスラ式BEV風2Dマップ（人物・軌道）。来場者位置の把握＋デバッグに使用（声かけ用途は破棄）
-- **P3 距離の連続化＋自動キャリブレーション（完了）**：far/mid撤廃、顔サイズ→距離の自己推定、dキー調整の撤廃。近づき検出の自然さに直結
-- **P4 ~~声かけポリシー~~ → 破棄（2026-09-30）**：呼び込み破棄に伴い廃止
-- **P5 映像理解の拡張（完了）**：接近時に表情・属性を取得→会話文脈に注入（イベント駆動、毎フレーム投げない）。笑顔・驚き＋困惑（browDown+mouthFrown）・急ぎ（vd<-0.8）・服装1枚（visionComment、SKIP時は注入なし）を実装。接続時1行＋会話中追注入（GeminiはsendClientContent/turnComplete:false、localはhistory追加）＋`conversation_start`ログ。`tsc`通過、mainマージ済み
-- **P6 応答遅延の分解・短縮（計測実装中）**：体感速度が人間味を決める。測らず削らない
-  - 分解計測：マイク→STT確定／LLM初回トークン／TTS初回音声の3区間をHUD＋eventLog（`stt_final` `llm_first_token` `tts_first_audio`追加）で切り分け
-  - 進捗（2026-10-06）：local3区間計測を実装（`sttMs/llmMs/ttsFirstMs/turnMs/turns`をHUD表示、`?engine=local`で確認可）。Gemini本線は既製品S2Sで分離不可のため見送り。eventLog JSONL化は中央値集計時に追加
-  - 施策：(1) 文節単位の逐次TTS＋先頭チャンクで喋り始め (2) フィラー先返し0.3秒（「えーっと」で時間稼ぎ） (3) VADの発話終了検出を早める
-  - 目標：ユーザー発話終了→応答開始の中央値で評価。数値はREADME・Zennの弾にする
-- **P7 文脈ある第一声（案内の核2、転用検討）**：毎回LLMに考えさせない。`{時間挨拶}＋{混雑一行}＋{前回文脈}` のテンプレ＋差し込み。失敗時はテンプレ素読み
-- **P8 声と体の連動（2026-09-26追加）**：全部生成に寄せない
-  - 主：感情タグ（joy/explain/callout）→プリセットモーション選択（即応・無料）。既存walk/wave/drink等＋不足分を追加
-  - 従：text-to-motionは単発の大技専用で別サービス接続（Replicate/RunPod候補。「GPU text-to-motionの手段」未決事項と合流）
-- **P9 会話記憶（案内の核3）**：セッション保存（localStorage）＋再訪時の呼び戻し。前後比較できる運用者閲覧が先、来場者向け想起は後
+## 直近の作業ログ
 
-### 候補・条件付き
-
-- **研究一点**：案内解決率の測定・最適化（相談→解決率の定量化）。P1のログ基盤に乗る。独自性は「表情×会話の紐付け計測」が候補。
-
-### 別リポ候補：薄い記憶層OSS（2026-09-26追加、mirage-v2外）
-
-- **動機**：コーディングエージェントのコンテキストはターミナルを閉じたら消える。セッションをまたぐ記憶をエージェント非依存で保持したい
-- **先に触る既存**：mem0／Letta（旧MemGPT）／Zep。不満点を抽出してから作る（車輪回避）。調査自体がZennネタ
-- **設計方針**：JSONL追記＋終了時要約＋次回注入だけの薄い層。重いDB・ベクトル検索は持たない。opencodeと組み合わせる実験台にもする
-- **位置づけ**：mirage-v2のコードには入れない。記憶はmirageの会話履歴（P5の服装キャッシュ等）とは別物として独立リポで育てる
-
-### やらないこと
-
-- text-to-motion等の研究寄り新規実装、24/7プロダクト化、演出の微調整ループ、声の完全統一への過剰投資
-
----
-
-過去のセッションログ・設計メモは [docs/history.md](docs/history.md) に移動済み。
-
-
-studio.mdとかにかいてあるさ自分でaiに出してもらったこーどを理解するとかあるけど今マジで全然理解していないけどやばいかな。なんとなくわかるぐらいでさ。あと正直tsxにしろ正直jsだからやっぱりjsの理解が足りていないのかなと思うんだけどどう思う？理解足りてないからコーディング対策をしようかなというのと就活も絡めてって感じでやるつもりなんだけどjsってなんでほかの言語でやるよりあんなに複雑というか長いの？
-正直に言うね。4点とも答える。
-1. 理解してないのはやばいか → 合否に直結する意味ではやばい
-面接で「このKalman何してる？」と聞かれて答えられないと、ポートフォリオが逆効果になる。企業はコード量でなく説明できるかを採点する。ただし今の段階(大2)で全部理解は不要。核の3本だけ押さえればいい: 距離推定(estimateDistanceM)、trackerのKalman、Appの150msループ。この3つを自分の言葉で5分説明できる状態が目標。今回の削除(-503行)はその意味でも正解だった。覚える量が減った。
-2. JS理解は足りてない → 足りてない
-根拠: hoisting、PowerShellとbashの違い、replaceAllのlib問題——どれもAIに投げる前に詰まる系。でも弱点は明確で、穴は3つだけ: クロージャ/useRefの寿命、非同期(Promise/event loop)、モジュール・型の基礎。対策は教科書でなくこのリポ: speak()→SpeechSynthesis、computeInterestの重み、kfStepの数式を1つずつ潰すのが最短。自分の動くコードが最高の教材。
-3. 就活絡みの進め方
-大2の今はPaiza B〜AtCoder茶〜緑＋JS深掘り(MDNを辞書引き)。大3夏インターン前に mirage の「止まり率・遅延MAE」を数字で語れる化＋Zenn1本。これが Cette 年収帯のフロント選考の王道ルート。コーディング試験は言語不問が多いからJSで受ける必要もない。
-4. JSが長く見える理由 → 言語でなく現場のせい
-同じ処理をPythonで書いても長い。長さの正体は3つ: ブラウザ固有の非同期・権限・互換対応(型宣言の自前書き等)、Reactのhooks+ref定型文、機能の堆積(Appが神化してた)。証拠に今日の削除で半分消えた。短く書く技術より「消す判断」が効く言語だと思った方がいい。
-
-1の理解って結局jsの理解が足りてないからなんじゃないかな？正直promiseとかよくわからんし、userefとかはreactかこっちもよくわからんあとhooksもよくわからんし、
-3. 就活絡みの進め方
-大2の今はPaiza B〜AtCoder茶〜緑＋JS深掘り(MDNを辞書引き)。大3夏インターン前に mirage の「止まり率・遅延MAE」を数字で語れる化＋Zenn1本。これが Cette 年収帯のフロント選考の王道ルート。コーディング試験は言語不問が多いからJSで受ける必要もない。 ここ詳しくあとjsの理解が足りんからjsをpaizaとかatcoderでやろうと思うのは間違いなの？俺は理解プラスランクを上げたいのが目的です。
-4のやつさたとえばpythonならa= int(input())みたいに簡単に入力とれるけどjsだと謎のコードとかでなんかコード量書くじゃんそれが俺がいいたいこと
-+ Thought: 12.6s
-+ Thought: 565ms
-その自己診断は正しい。3点とも答える。
-1. 理解不足の正体はその3つ
-- Promise: 非同期の約束手形。await transcribeOnce()=「聞き終わるまで待つ」。リポではspeak/fetch/Gemini接続ぜんぶこれ。thenの入れ子にしないための構文とだけ覚えればいい。
-- useRef: 再レンダーに巻き込まれない箱。faceSizeRefが毎フレーム変わっても再描画しない、useStateは変わると再描画する。使い分けはそれだけ。
-- hooks: useEffect=副作用の購読と後始末(interval設定→解除)。ルールは「トップレベルで呼ぶ」の1行。
-この3つがわかればApp.tsxの8割は読める。残り2割はThree.jsの作法。
-3. 就活計画(詳しく)＋JSで競プロは間違いか
-結論: 間違いじゃない。ただし目的を分けろ。
-- ランク・スクリーニング突破が目的ならPythonが合理的。入力1行、整数無限桁、itertools——JSは全部ハンデ。
-- JS理解が目的ならJSで解くのは最高の教材。痛い分だけ覚える。
-- おすすめ両刀: ランク取りはPython、週1〜2問だけJSで解き直し枠。大2の今→Paiza B/AtCoder茶、大3春→A/緑、大3夏インターン前にmirage数値化＋Zenn。これでメガベンチャーのフロント選考ラインに乗る。コーディング試験は言語不問が大半だからJS縛りは不要。
-4. input()の件はその通り
-Nodeの定型文を覚えるだけで解決する:
-const [[a]] = require("fs").readFileSync(0, "utf8").trim().split("\n").map(l => l.split(" ").map(Number));
-理由: JSはブラウザ用に生まれstdinの概念がなく、Nodeが後付けでstreamとして足した。Pythonは最初からスクリプト言語。だから競プロ入力だけが異常に長い。普段のフロントではstdinを触らないので、この長文はコピペ暗記でOK。日常JSの長さの主犯は別(非同期とDOM)。
-
-まとめ。
-方針4点
-1. mirage本体をAIと作る
-2. わからん所をAIで潰す → tts.ts:26、App.tsx:23から。目標は距離推定・Kalman・150msループを5分で説明
-3. コーディングはPythonで今から → Paiza B→A、AtCoder茶→緑
-4. 数字が出たらZenn1本 → 止まり率・遅延MAE
-技術の順番
-- 今: React + git(add/commit/push/branch) + Python
-- 本体が説明できたら: studio=Next (studio/app/)
-- 大3夏前: VercelデプロイでOK。Docker/Linux/AWSは後回し
-モチベ: 5分だけ開く。1関数・1問でいい。
-
-Avatar.tsx:1004行は削って読む。自力削除の手順はこれだけ。
-1. 使われてるか: 全文読むな、import元を探せ。Avatar は App.tsx:640 と Playground.tsx:156 の2箇所だけ → 現役。消しちゃダメ。
-2. props単位で見る: 例えば paused が App.tsx 以外で出なければ死にprops。grep paused で0なら消し。
-3. 消したら pnpm build。通れば勝ち、外したら git restore。
-コツ: 入口は App.tsx だけ。そこから辿れないファイルは死に候補。いきなり Avatar.tsx の中身を全部理解しようとするから溺れる。中は「呼吸・瞬き・歩行」の寄せ集めと割り切れ。
-
-gitだけ今やれ。残りは後でいい。
-- git: 必須。今から。add / commit / push / branch / worktree だけ。mirageで毎日使えば覚える。
-- Docker/Linux/AWS: 今いらない。大3夏前に「Vercelに上げた」で十分。フロント選考は中身を見る、インフラは加点にしかならん。
-順番: git > Next > Docker/AWSの順。
-
-## ★ 決定事項（2026-09-29）
-- ローカル会話フォールバックは残す。Gemini一本化しない（オフライン時の無音を避ける）
-
-## ★ 方向転換（2026-09-30）
-- **呼び込みは破棄**。最終目標を「完全自立型呼び込み」から「駅・施設の困りごと案内」に変更
-- **目標**：実際に運用できる案内エージェント。来場者の困りごと・疑問に、前後の文脈を理解して答える
-- **3本柱**：映像理解（表情・状況の読み取り強化）／会話記憶（文面を覚えて前後を繋ぐ）／優しいUI（運用者・利用者向け表示）
-- 映像まわりで独自性を作る（表情×会話の紐付け計測が候補）
-- 以下ロードマップは呼び込み前提から案内前提に組み直し。P4（声かけポリシー）は破棄、P7（第一声テンプレ）は案内用に転用検討
-
-## ★ 作業ログ（2026-09-29、リファクタ）
-- `Avatar.tsx`: 1004→204行。手書きの徘徊・接近・手招き・nod/tilt・チラ見・気づき・首追従・呼吸/揺れを撤去。残しはVRM表示＋walk/stretchの`.vrma`＋瞬き・リップ・単純注視
-- `App.tsx`: 918→720行。STARTLE・LOOK_AWAY・vision二段構え・3秒ループ・actionRef配線を撤去。`tsc`通過
-- 残った核: 150msループ・距離→会話遷移・Gemini接続/切断（面接で説明するのはこの3点）
-- デバッグHUD・`c`校正は残す（当日調整用）
-- 3Dモデル刷新は保留: Modal無料枠＋TRELLIS.2/Hunyuan2.1両回し案。`scripts/gen3d_modal.py`は未作成
+- 2026-10-21: GitHub の `refactor/2d-avatar` ブランチ（3D→2D 化・距離補正・周囲マップ整理）を main へ統合。`tsc --noEmit` 通過、`scripts/test-avatar2d.mjs` / `scripts/test-tracking.mjs` 通過。P10 は配線まで完了、残り＝実素材＋感情タグ。
+- 2026-10-21: ドキュメントを整理。矛盾していた旧仕様3枚（`architecture.md` / `behavior.md` / `state-machine.md`）と `todo.md` / `runtime.md` / `docs/README.md` を削除（runtime の生きた内容は README に統合）。`history.md`・`portfolio.md` は `records/` へ、`studio.md` は `studio/` へ移動。md は 16枚 → 11枚。
+- 2026-10-20: 要件定義の土台を追加、2D 方針と P10〜P16 をロードマップに追加。`NEXT.md` を正本3枚（decisions / requirements / roadmap）＋履歴（history）に分割。README を現状に更新し、Phase A〜D の日誌を `docs/portfolio.md` へ移動。
+- 2026-09-11: M1 / M2 / P1 完了。Gemini 直結、フォールバック、トラッキング基盤。→ 詳細は [docs/history.md](records/history.md)

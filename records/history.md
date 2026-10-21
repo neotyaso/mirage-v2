@@ -1,7 +1,7 @@
 # Mirage 開発日誌・過去メモ
 
 > `NEXT.md` から移動した過去セッションログ・方針・アイデア（〜2026-09-11）。
-> 現行の残件・ロードマップは [NEXT.md](../NEXT.md) を参照。
+> 現行の仕様は [requirements.md](../docs/requirements.md) / [decisions.md](../docs/decisions.md) / [roadmap.md](../docs/roadmap.md) を参照。このファイルは記録であり指示ではない。
 
 >
 > ## ★ 2026-09-11: Gemini完全自立型への置換 (M1進行中)
@@ -1463,3 +1463,168 @@ action
 motion
 emotion
 music
+
+
+
+studio.mdとかにかいてあるさ自分でaiに出してもらったこーどを理解するとかあるけど今マジで全然理解していないけどやばいかな。なんとなくわかるぐらいでさ。あと正直tsxにしろ正直jsだからやっぱりjsの理解が足りていないのかなと思うんだけどどう思う？理解足りてないからコーディング対策をしようかなというのと就活も絡めてって感じでやるつもりなんだけどjsってなんでほかの言語でやるよりあんなに複雑というか長いの？
+正直に言うね。4点とも答える。
+1. 理解してないのはやばいか → 合否に直結する意味ではやばい
+面接で「このKalman何してる？」と聞かれて答えられないと、ポートフォリオが逆効果になる。企業はコード量でなく説明できるかを採点する。ただし今の段階(大2)で全部理解は不要。核の3本だけ押さえればいい: 距離推定(estimateDistanceM)、trackerのKalman、Appの150msループ。この3つを自分の言葉で5分説明できる状態が目標。今回の削除(-503行)はその意味でも正解だった。覚える量が減った。
+2. JS理解は足りてない → 足りてない
+根拠: hoisting、PowerShellとbashの違い、replaceAllのlib問題——どれもAIに投げる前に詰まる系。でも弱点は明確で、穴は3つだけ: クロージャ/useRefの寿命、非同期(Promise/event loop)、モジュール・型の基礎。対策は教科書でなくこのリポ: speak()→SpeechSynthesis、computeInterestの重み、kfStepの数式を1つずつ潰すのが最短。自分の動くコードが最高の教材。
+3. 就活絡みの進め方
+大2の今はPaiza B〜AtCoder茶〜緑＋JS深掘り(MDNを辞書引き)。大3夏インターン前に mirage の「止まり率・遅延MAE」を数字で語れる化＋Zenn1本。これが Cette 年収帯のフロント選考の王道ルート。コーディング試験は言語不問が多いからJSで受ける必要もない。
+4. JSが長く見える理由 → 言語でなく現場のせい
+同じ処理をPythonで書いても長い。長さの正体は3つ: ブラウザ固有の非同期・権限・互換対応(型宣言の自前書き等)、Reactのhooks+ref定型文、機能の堆積(Appが神化してた)。証拠に今日の削除で半分消えた。短く書く技術より「消す判断」が効く言語だと思った方がいい。
+
+1の理解って結局jsの理解が足りてないからなんじゃないかな？正直promiseとかよくわからんし、userefとかはreactかこっちもよくわからんあとhooksもよくわからんし、
+3. 就活絡みの進め方
+大2の今はPaiza B〜AtCoder茶〜緑＋JS深掘り(MDNを辞書引き)。大3夏インターン前に mirage の「止まり率・遅延MAE」を数字で語れる化＋Zenn1本。これが Cette 年収帯のフロント選考の王道ルート。コーディング試験は言語不問が多いからJSで受ける必要もない。 ここ詳しくあとjsの理解が足りんからjsをpaizaとかatcoderでやろうと思うのは間違いなの？俺は理解プラスランクを上げたいのが目的です。
+4のやつさたとえばpythonならa= int(input())みたいに簡単に入力とれるけどjsだと謎のコードとかでなんかコード量書くじゃんそれが俺がいいたいこと
++ Thought: 12.6s
++ Thought: 565ms
+その自己診断は正しい。3点とも答える。
+1. 理解不足の正体はその3つ
+- Promise: 非同期の約束手形。await transcribeOnce()=「聞き終わるまで待つ」。リポではspeak/fetch/Gemini接続ぜんぶこれ。thenの入れ子にしないための構文とだけ覚えればいい。
+- useRef: 再レンダーに巻き込まれない箱。faceSizeRefが毎フレーム変わっても再描画しない、useStateは変わると再描画する。使い分けはそれだけ。
+- hooks: useEffect=副作用の購読と後始末(interval設定→解除)。ルールは「トップレベルで呼ぶ」の1行。
+この3つがわかればApp.tsxの8割は読める。残り2割はThree.jsの作法。
+3. 就活計画(詳しく)＋JSで競プロは間違いか
+結論: 間違いじゃない。ただし目的を分けろ。
+- ランク・スクリーニング突破が目的ならPythonが合理的。入力1行、整数無限桁、itertools——JSは全部ハンデ。
+- JS理解が目的ならJSで解くのは最高の教材。痛い分だけ覚える。
+- おすすめ両刀: ランク取りはPython、週1〜2問だけJSで解き直し枠。大2の今→Paiza B/AtCoder茶、大3春→A/緑、大3夏インターン前にmirage数値化＋Zenn。これでメガベンチャーのフロント選考ラインに乗る。コーディング試験は言語不問が大半だからJS縛りは不要。
+4. input()の件はその通り
+Nodeの定型文を覚えるだけで解決する:
+const [[a]] = require("fs").readFileSync(0, "utf8").trim().split("\n").map(l => l.split(" ").map(Number));
+理由: JSはブラウザ用に生まれstdinの概念がなく、Nodeが後付けでstreamとして足した。Pythonは最初からスクリプト言語。だから競プロ入力だけが異常に長い。普段のフロントではstdinを触らないので、この長文はコピペ暗記でOK。日常JSの長さの主犯は別(非同期とDOM)。
+
+まとめ。
+方針4点
+1. mirage本体をAIと作る
+2. わからん所をAIで潰す → tts.ts:26、App.tsx:23から。目標は距離推定・Kalman・150msループを5分で説明
+3. コーディングはPythonで今から → Paiza B→A、AtCoder茶→緑
+4. 数字が出たらZenn1本 → 止まり率・遅延MAE
+技術の順番
+- 今: React + git(add/commit/push/branch) + Python
+- 本体が説明できたら: studio=Next (studio/app/)
+- 大3夏前: VercelデプロイでOK。Docker/Linux/AWSは後回し
+モチベ: 5分だけ開く。1関数・1問でいい。
+
+Avatar.tsx:1004行は削って読む。自力削除の手順はこれだけ。
+1. 使われてるか: 全文読むな、import元を探せ。Avatar は App.tsx:640 と Playground.tsx:156 の2箇所だけ → 現役。消しちゃダメ。
+2. props単位で見る: 例えば paused が App.tsx 以外で出なければ死にprops。grep paused で0なら消し。
+3. 消したら pnpm build。通れば勝ち、外したら git restore。
+コツ: 入口は App.tsx だけ。そこから辿れないファイルは死に候補。いきなり Avatar.tsx の中身を全部理解しようとするから溺れる。中は「呼吸・瞬き・歩行」の寄せ集めと割り切れ。
+
+gitだけ今やれ。残りは後でいい。
+- git: 必須。今から。add / commit / push / branch / worktree だけ。mirageで毎日使えば覚える。
+- Docker/Linux/AWS: 今いらない。大3夏前に「Vercelに上げた」で十分。フロント選考は中身を見る、インフラは加点にしかならん。
+順番: git > Next > Docker/AWSの順。
+
+---
+
+## ★ 2026-10-20: NEXT.md を正本分割（要件・決定・履歴の分離）
+
+この日付で `NEXT.md` を「正本（decisions / requirements / roadmap）＋ 履歴（history）」に分けた。
+**この節以降の記述は過去の記録であり、現在の仕様ではない。** 現在の仕様は [decisions.md](../docs/decisions.md) / [requirements.md](../docs/requirements.md) / [roadmap.md](../docs/roadmap.md) を参照。
+
+移行の対応表:
+
+| 旧 NEXT.md の節 | 移動先 |
+| --- | --- |
+| 決定事項（有効なもの） | `decisions.md`（D-001〜D-010） |
+| 要件定義の土台 | `requirements.md`（§1〜§9）＋ 完了条件（§10） |
+| ロードマップ P1〜P16 | `roadmap.md`（状態・依存・着手順） |
+| 過去の決定・作業ログ・相談ログ | このファイル |
+| 研究一点・別リポ候補・やらないこと | `roadmap.md`（候補）/ `decisions.md`（D-009・D-010） |
+
+### 移行前の記録（2026-09-11〜09-30）
+
+#### ★ 直近の作業ログ（2026-09-11）
+
+- M1完了・mainマージ：Gemini直結導入、Groq/Gemini切替、mid/near自動connect、計測HUD。`tsc`通過
+- M2完了・mainマージ：Gemini→Groq自動フォールバック（3回リトライ→切替・バナー・手動復帰）、`scripts/start-dev.ps1`一発起動
+- P1完了・mainマージ（未配線）：`src/tracking/` トラッキング＋イベントログ基盤（43チェック通過）
+- Groq系撤去済み。**Groq経路（`useConversation`: Whisper STT + chat）はフォールバックとして維持（2026-09-22決定）。`useConversation.ts` は `conversation/{stt,llm,tts}.ts` に分割済み（tsc通過）**
+- 決定事項：フォールバック3層（Gemini→Groq→ローカル/縮退）、BEV俯瞰可視化は採用、研究一点は呼び込み効果測定
+
+#### ★ 決定事項（2026-09-23、寝る前）→ superseded: D-001
+
+**完全自立型は新規リポで作る。このmirageとは分離する。**
+
+- **役割分離**
+  - mirage = 現役の展示システム（アバター・Gemini Live・Groq/Ollamaフォールバック）＋「どう考え作ってきたか」の過程記録（このmd群とコミット履歴）。触り続ける
+  - 新規リポ = 完全自立型の完成形。最終的に見せるのはこちら
+  - 見せ方: mirageのmd（過程）＋新規リポ（完成）の二本立て
+- **新規リポの構成方針**
+  - LLM/STT/TTSはGemini一本に畳む（Groq/Ollama/ローカルSTTの分岐は持たない）← 2026-09-29 に撤回（D-004）
+  - 表情・モーションはクラウドGPUのtext-to-motionを別サービスとして接続 ← 2026-10-20 に 2D 化で優先度下げ（D-002）
+  - mirageからfork/cloneしない。完全に空のリポから始める ← 実際は clone で履歴ごと移った
+- **移行ルール**
+  - mdはコピーで新規リポの`docs/`へ（mirage側は残す。moveではない）← **実際はクローンで履歴ごと移ったのでこの作業は不要になった**
+  - コード借用は必要な時点でそのファイルだけコピー。最初から抽象化・共有パッケージ化しない
+  - mirageのHEADは今のまま凍結方向。削除済みデモ（gemini-lab等）は復活させない＝履歴と現在を乖離させない
+- **未決**
+  - ~~新規リポ名~~ → **`mirage-v2`** に決定。 https://github.com/neotyaso/mirage-v2 （PUBLIC、mirage履歴込みでpush済み）
+  - GPU text-to-motionの手段（自前推論 or Replicate/RunPod等の借り物）← D-002 で優先度下げ
+
+#### ★ 明日からの最初の作業（mirage-v2側）← 旧計画のため破棄（2026-09-30。以下は記録として残す）
+
+1. ~~`C:\プログラミング\mirage-v2` をエディターで開き直し~~ → 済み（Mac環境）
+2. ~~いがないとこの削除: Groq/Ollama/ローカルSTT分岐~~ → 9-29決定でローカル維持に変更。呼び込み系の削除は別途完了
+3. ~~Gemini一本に畳んだ後、クラウドGPU text-to-motion手段の調査・選定~~ → 未着手のまま。P8と合流 → 2D 化で方針変更（D-002）
+4. 決定事項をコミット＆pushしてから本編
+
+#### ★ 決定事項（2026-09-29）→ superseded: D-004
+
+- ローカル会話フォールバックは残す。Gemini一本化しない（オフライン時の無音を避ける）
+
+#### ★ 方向転換（2026-09-30）→ D-005
+
+- **呼び込みは破棄**。最終目標を「完全自立型呼び込み」から「駅・施設の困りごと案内」に変更
+- **目標**：実際に運用できる案内エージェント。来場者の困りごと・疑問に、前後の文脈を理解して答える
+- **3本柱**：映像理解（表情・状況の読み取り強化）／会話記憶（文面を覚えて前後を繋ぐ）／優しいUI（運用者・利用者向け表示）
+- 映像まわりで独自性を作る（表情×会話の紐付け計測が候補）
+- 以下ロードマップは呼び込み前提から案内前提に組み直し。P4（声かけポリシー）は破棄、P7（第一声テンプレ）は案内用に転用検討
+
+#### ★ 作業ログ（2026-09-29、リファクタ）
+
+- `Avatar.tsx`: 1004→204行。手書きの徘徊・接近・手招き・nod/tilt・チラ見・気づき・首追従・呼吸/揺れを撤去。残しはVRM表示＋walk/stretchの`.vrma`＋瞬き・リップ・単純注視
+- `App.tsx`: 918→720行。STARTLE・LOOK_AWAY・vision二段構え・3秒ループ・actionRef配線を撤去。`tsc`通過
+- 残った核: 150msループ・距離→会話遷移・Gemini接続/切断（面接で説明するのはこの3点）
+- デバッグHUD・`c`校正は残す（当日調整用）
+- 3Dモデル刷新は保留: Modal無料枠＋TRELLIS.2/Hunyuan2.1両回し案。`scripts/gen3d_modal.py`は未作成 → 2026-10-20 に破棄（D-007）
+
+---
+
+## ★ 2026-10-21: GitHub ブランチ `refactor/2d-avatar` を main へ統合
+
+**統合内容**: 俺が GitHub にpushしていた `refactor/2d-avatar` ブランチ（7 コミット）を `main` に取り込んだ。merge コミット `2abebfd`（`--no-ff`）。ローカル main は `64c8573` → `62302e3`（origin/main の P6 計測JSONL化＋テスト追加）をffしたうえで統合。
+
+**ブランチの主要内容**
+
+| コミット | 内容 |
+| --- | --- |
+| `fd4b35f` | refactor: アバター描画を3D(VRM)から2Dへ差し替え。`Avatar.tsx`/`OffAxisCamera.tsx`/VRMアセット削除、`Avatar2D.tsx` と純関数 `avatar2dState.ts` を追加、`scripts/test-avatar2d.mjs`（14 チェック）追加 |
+| `1b4309e` / `aec2521` / `a12eb49` | 距離推定の実測補正（0.5 → 0.4 → **0.47**）。展示カメラでHUDと実測を突き合わせた結果、推定が約2倍出ていたため比率で補正 |
+| `860241e` / `695e3e8` | Tesla風の周囲ビュー(SurroundView)追加 → マップ枠(BevMap)へ移動し家具を追加 |
+| `50c6171` | revert: 周囲マップをTesla風から元の2Dマップへ戻す |
+
+**統合後の検証**
+
+- `npx tsc --noEmit` → 通過
+- `node scripts/test-avatar2d.mjs` → 14 チェックすべて通過
+- `node scripts/test-tracking.mjs` → 全チェック成功
+- 3D 依存（@react-three/fiber / drei / three-vrm / three-vrm-animation）を package.json から削除。`three` は `useFaceDetection.ts` の Matrix/Quaternion 計算でまだ使うので残置
+
+**残件（P10 の残り）**
+
+- 2D は SVG シルエットのプレースホルダ。実素材（画像/動画）への差し替えと、感情タグ（joy/explain/callout）による表情/モーション切替（P8）が未着手
+- 方式の決定は [decisions.md](../docs/decisions.md) D-011（自前 SVG ＋ CSS 変数、差し替え前提）に記録
+
+**残件（統合とは別）**
+
+- `scripts/test-*.mjs` 2 本を `pnpm test` 1 コマンドにまとめる（要件 §10 P14）
+- CI（テスト必須チェック）・監視（P15）
+- `scripts/dev.mjs` のヘッダコメントが旧構成（AivisSpeech/Ollama前提）を指している。現行（Gemini Live + Groq/ローカルフォールバック）とズレている
