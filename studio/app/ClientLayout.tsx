@@ -7,6 +7,7 @@ import { StatusProvider } from "./components/StatusContext";
 
 const navItems = [
   { name: "Dashboard", href: "/" },
+  { name: "Vision", href: "/vision" },
   { name: "Sessions", href: "/sessions" },
   { name: "Settings", href: "/settings" },
 ];

@@ -1,15 +1,24 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useStatus } from "./StatusContext";
 import { Badge } from "./Badge";
 
+const TITLES: Record<string, string> = {
+  "/": "Dashboard",
+  "/vision": "Vision",
+  "/sessions": "Sessions",
+  "/settings": "Settings",
+};
+
 export function Header() {
   const { status, toggleStatus } = useStatus();
+  const title = TITLES[usePathname()] ?? "Mirage Studio";
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="text-xl font-bold text-gray-900">{title}</h1>
         <Badge variant="status" value={status} />
       </div>
       <button

@@ -5,11 +5,9 @@ import type { FaceCenter, FaceExpression } from "./useFaceDetection";
 // 接近時1回だけ会話エンジンに渡す1行文脈。毎フレーム投げないイベント駆動用。
 // ponytail: 閾値固定、現場で外したら定数だけ調整、分類器は足さない
 export function buildVisitorContext(expr: FaceExpression | undefined, vd?: number | null): string {
-  if (!expr) return "";
   const parts: string[] = [];
-  if (expr.confused > 0.5) parts.push("困惑気味");
-  else if (expr.smile > 0.6) parts.push("笑顔");
-  else if (expr.surprised > 0.5) parts.push("驚いた様子");
+  const mood = MOOD_JA[moodOf(expr)];
+  if (mood) parts.push(mood);
   if (vd !== undefined && vd !== null && vd < -0.8) parts.push("急ぎ足で接近");
   return parts.join("、");
 }
@@ -18,6 +16,7 @@ import type { ConversationEngine } from "./useConversationEngine";
 import { createVisitorTracker } from "../tracking/visitorTracker";
 import type { VisitorTracker } from "../tracking/visitorTracker";
 import { generateVisionComment } from "../vision/visionComment";
+import { MOOD_JA, moodOf } from "../vision/expression";
 import { ZONE_MID_M } from "../tracking/types";
 import { createEventLog } from "../tracking/eventLog";
 import type { EventLog } from "../tracking/eventLog";
@@ -58,6 +57,8 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
   if (eventLogRef.current === null) eventLogRef.current = createEventLog();
   // 接近時1枚visionの発火ガード（会話ごとに1回）。非同期解決後のinjectはref経由で最新を使う
   const visionFiredRef = useRef(false);
+  // P5: 会話中の表情変化を追注入するための状態（安定1.5秒・最短10秒）
+  const moodRef = useRef({ label: "", since: 0, lastAt: 0, lastLabel: "" });
   const injectRef = useRef(eng.injectContext);
   injectRef.current = eng.injectContext;
   useEffect(() => {
@@ -69,6 +70,12 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
   useEffect(() => {
     localMetricsRef.current = eng.localMetrics;
   }, [eng.localMetrics]);
+  // P22: 検索ツールの実行記録。実行のたびに1件だけeventLogへ足す
+  const geminiMetricsRef = useRef(eng.geminiMetrics);
+  const lastToolRunRef = useRef(0);
+  useEffect(() => {
+    geminiMetricsRef.current = eng.geminiMetrics;
+  }, [eng.geminiMetrics]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -112,6 +119,14 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
         if (lm.ttsFirstMs !== null) latencyLog.append("tts_first_audio", null, { ms: lm.ttsFirstMs, turn: lm.turns, turnMs: lm.turnMs });
       }
 
+      // P22: 検索の有無・所要時間・成否を残す（P23で集計）
+      const gm = geminiMetricsRef.current;
+      if (latencyLog && gm.toolRuns > lastToolRunRef.current) {
+        lastToolRunRef.current = gm.toolRuns;
+        const t = gm.lastTool;
+        if (t) latencyLog.append("web_search", null, { tool: t.name, query: t.query, ms: Math.round(t.ms), ok: t.ok });
+      }
+
       if (p) lastPresentAtRef.current = now;
       if (started && !paused) {
         if (activeConvState === "idle") visionFiredRef.current = false;
@@ -129,6 +144,9 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
           } else {
             eng.connect(ctx || undefined);
           }
+          // 開始時に表情を伝えているので、直後の追注入はしない
+          moodRef.current.lastAt = now;
+          moodRef.current.lastLabel = moodOf(expressionRef.current);
           // P5属性: 接近時1枚だけ服装推定→会話中コンテキストに追注入（会話開始は待たない）
           // ponytail: SKIP/null時は注入なし、会話終了後の解決は破棄
           if (!visionFiredRef.current) {
@@ -140,6 +158,33 @@ export function useVisitorLoop({ started, paused, eng, presentRef, videoRef, fac
             }).catch(() => {});
           }
         }
+        // P5: 会話中に表情が大きく変わったら、その表情を文脈へ追注入する。
+        // 同じ表情で連投しない（安定1.5秒・最短10秒・同じ表情は1回）
+        if (activeConvState === "idle") {
+          // 開始時に伝えた表情を直後に繰り返さないよう、lastAt/lastLabel は残す
+          moodRef.current.label = "";
+          moodRef.current.since = 0;
+        } else {
+          const m = moodRef.current;
+          const mood = moodOf(expressionRef.current);
+          if (mood === "neutral") {
+            m.label = "";
+            m.lastLabel = "";
+          } else if (mood !== m.label) {
+            m.label = mood;
+            m.since = now;
+          } else if (
+            eng.engine === "gemini" &&
+            now - m.since > 1500 &&
+            now - m.lastAt > 10000 &&
+            m.lastLabel !== mood
+          ) {
+            injectRef.current(`[来場者の表情: ${MOOD_JA[mood]}]`);
+            m.lastAt = now;
+            m.lastLabel = mood;
+          }
+        }
+
         if (activeConvState !== "idle" && now - lastPresentAtRef.current > AWAY_TIMEOUT_MS) {
           // 実際にやり取りがあった（ログが残っている）場合だけ別れの一言を挟む
           if (hasLogRef.current) {

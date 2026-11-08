@@ -1,22 +1,38 @@
-import type { CSSProperties } from "react";
-
 export function StartOverlay({ onStart }: { onStart: () => void }) {
   return (
-    <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, zIndex: 30 }}>
-      <button style={startBtnStyle} onClick={onStart}>
-        ▶ 展示スタート
+    <div className="start-overlay">
+      <button
+        type="button"
+        className="start-button"
+        onClick={onStart}
+        aria-label="会話をはじめる"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <rect
+            x="9"
+            y="3.5"
+            width="6"
+            height="10.5"
+            rx="3"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <path
+            d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        </svg>
+        はじめる
       </button>
+      <p className="start-hint">レムに話しかけてね</p>
     </div>
   );
 }
-
-const startBtnStyle: CSSProperties = {
-  color: "#fff",
-  border: "none",
-  cursor: "pointer",
-  padding: "16px 36px",
-  fontSize: 18,
-  fontWeight: "bold",
-  background: "#8b5cf6",
-  borderRadius: 12,
-};

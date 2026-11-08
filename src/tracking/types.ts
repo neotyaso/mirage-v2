@@ -67,7 +67,8 @@ export type TrackEventType =
   | "leave"
   | "stt_final"
   | "llm_first_token"
-  | "tts_first_audio";
+  | "tts_first_audio"
+  | "web_search";
 
 /**
  * 時系列ログの1イベント。

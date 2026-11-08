@@ -7,6 +7,8 @@ import { StartOverlay } from "./components/StartOverlay";
 import { useFaceDetection } from "./hooks/useFaceDetection";
 import { useConversationEngine, CONVERSATION_START_LINES } from "./hooks/useConversationEngine";
 import { useVisitorLoop } from "./hooks/useVisitorLoop";
+import { useVisionTelemetry } from "./hooks/useVisionTelemetry";
+import { useVisionRtcSender } from "./hooks/useVisionRtcSender";
 import { speak, useVoiceWarmup } from "./hooks/conversation/tts";
 
 // S2Sモデルが割り込み・視線を扱うため手書き反応は撤去(P8方針)
@@ -19,7 +21,7 @@ export default function App() {
   const speakingRef = useRef(false);
   const volumeRef = useRef(0);
 
-  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef, faceYawRef, expressionRef, ready: camReady, error: camError } =
+  const { videoRef, presentRef, faceCountRef, faceCenterRef, eyeCenterRef, faceSizeRef, eyeDistanceRef, allFaceCentersRef, allFaceSizesRef, allEyeDistancesRef, faceYawRef, expressionRef, faceBoxesRef, primaryFaceIndexRef, ready: camReady, error: camError } =
     useFaceDetection();
 
   const eng = useConversationEngine(speakingRef, volumeRef);
@@ -28,6 +30,21 @@ export default function App() {
   const [paused, setPaused] = useState(false);
 
   useVoiceWarmup();
+
+  // Studio のライブ映像モニタへ表情とフレームを送る（表示用・保存しない）
+  useVisionTelemetry({
+    enabled: camReady && !paused,
+    videoRef,
+    expressionRef,
+    faceBoxesRef,
+    primaryFaceIndexRef,
+    faceCountRef,
+    faceSizeRef,
+    eyeDistanceRef,
+    faceYawRef,
+  });
+  // Studio /vision へ WebRTC でカメラ映像を送る（P2P・視聴者がいなければ何もしない）
+  useVisionRtcSender(camReady && !paused, videoRef);
 
   function say(text: string) {
     speak(text, speakingRef, volumeRef);
@@ -69,12 +86,19 @@ export default function App() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
-      {/* 背景は作り直し中のため無地。新背景は後で決める */}
+    <div className="app-shell">
+      <div className="brand-mark" aria-hidden="true">MIRAGE</div>
+
       <Avatar2D speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} paused={paused} />
+      <div className="bg-grain" aria-hidden="true" />
 
       {/* 会話ログ（左側に流れるチャット） */}
-      {started && <ChatLog log={eng.displayLog} />}
+      {started && <ChatLog log={eng.displayLog} thinking={eng.activeConvState === "thinking"} />}
+
+      {/* 開始直後、最初のやり取りが始まるまでの案内 */}
+      {started && eng.displayLog.length === 0 && eng.activeConvState !== "thinking" && (
+        <p className="listen-hint">マイクに向かって話してね</p>
+      )}
 
       {/* 接続失敗の明示表示（HUDとは別に常時可視） */}
       {started && eng.failureNotice && (

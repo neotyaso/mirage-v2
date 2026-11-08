@@ -21,6 +21,19 @@ export function Playground() {
   const [gaze, setGaze] = useState<FaceCenter>({ x: 0.5, y: 0.5 });
   const [panelVisible, setPanelVisible] = useState(true);
 
+  // 検索ツールが使える状態か（Studio が起動しているか）を1回だけ確認する。
+  // q 無しは 400 が返るが、応答が来た時点で到達はできている。
+  const [studioOk, setStudioOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/studio/api/web/search", { signal: AbortSignal.timeout(2000) })
+      .then(() => alive && setStudioOk(true))
+      .catch(() => alive && setStudioOk(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const [cameraOn, setCameraOn] = useState(false);
   const cam = useFaceDetection(cameraOn);
 
@@ -72,7 +85,7 @@ export function Playground() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#ffffff" }}>
+    <div style={{ position: "fixed", inset: 0, background: "radial-gradient(circle at 50% 34%, #FFFDF8 0%, #F7F1E8 58%, #EFE6D9 100%)" }}>
       <Avatar2D speakingRef={speakingRef} volumeRef={volumeRef} faceCenterRef={faceCenterRef} eyeCenterRef={eyeCenterRef} />
 
       {eng.displayLog.length > 0 && <ChatLog log={eng.displayLog} />}
@@ -134,6 +147,18 @@ export function Playground() {
             {eng.engine} | {eng.geminiState} | turns={eng.geminiMetrics.turns}
           </span>
           {eng.failureNotice && <span style={{ fontSize: 11, color: "#fbbf24" }}>{eng.failureNotice}</span>}
+        </div>
+
+        <div style={rowStyle}>
+          <span style={labelStyle}>
+            検索ツール（Studio: {studioOk === null ? "確認中…" : studioOk ? "接続OK" : "未接続"})
+          </span>
+          <span style={{ fontSize: 12, opacity: 0.85 }}>
+            {eng.geminiMetrics.lastTool
+              ? `${eng.geminiMetrics.lastTool.name} ${eng.geminiMetrics.lastTool.ok ? "OK" : "NG"} ${Math.round(eng.geminiMetrics.lastTool.ms)}ms ${eng.geminiMetrics.lastTool.query.slice(0, 40)}`
+              : "まだ呼ばれていない（「今日の東京の天気は？」と話しかける）"}
+          </span>
+          <span style={{ fontSize: 11, opacity: 0.7 }}>calls={eng.geminiMetrics.toolRuns}</span>
         </div>
 
         <div style={rowStyle}>

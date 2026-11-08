@@ -32,7 +32,7 @@ export function Badge({ variant, value }: BadgeProps) {
   
   return (
     <span className={`${className} ${colors[value as keyof typeof colors]} text-white`}>
-      {label(value as any)}
+      {(label as (v: BadgeValue) => string)(value)}
     </span>
   );
 }

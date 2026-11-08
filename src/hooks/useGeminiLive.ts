@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleGenAI, Modality } from "@google/genai";
-import type { LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import type { FunctionCall, FunctionDeclaration, LiveServerMessage } from "@google/genai";
+import { fetchPage, webSearch } from "../web/search";
+import { getWeather } from "../web/weather";
+import { facilityPrompt } from "../data/facility";
 
 // Gemini Live API 直結フック (AI Studio と同じ公式SDK方式)。
 // 自前WS実装は捨てた。メッセージ形式・再接続はSDK任せ。
-// 認証は VITE_GEMINI_API_KEY のブラウザ直結 (backend不要)。
-// NOTE: キーはバンドルに含まれる。展示デモ割り切り。公開時は ephemeral token 方式に戻すこと。
+// 認証は Studio が発行する短命トークン（D-018）。APIキーはブラウザに置かない。
 // 音声: 送信 16kHz PCM16 / 受信 24kHz PCM16。
 
 export type GeminiState = "disconnected" | "connecting" | "listening" | "speaking" | "error";
@@ -23,6 +25,8 @@ export interface GeminiMetrics {
   firstAudioMs: number | null;
   turns: number;
   disconnects: number;
+  toolRuns: number;
+  lastTool: { name: string; query: string; ms: number; ok: boolean } | null;
 }
 
 const IN_RATE = 16_000;
@@ -31,13 +35,57 @@ const MODEL = "gemini-3.8-live";
 // 声は Zephyr 固定 (Lab側の選択肢は撤去済み)
 const VOICE = "Zephyr";
 
+// 検索は模型に任せる。コード側でキーワード判定はしない（言い方が無限にあるため）
+const TOOL_DECLARATIONS: FunctionDeclaration[] = [
+  {
+    name: "get_weather",
+    description:
+      "Get today's and tomorrow's weather for the venue (temperature, condition, rain chance). " +
+      "Use this for any weather question instead of web_search. Fast and always current.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the web for current information such as weather, opening hours, events or news. " +
+      "Returns titles, URLs and short snippets. Snippets often lack specific numbers, so call fetch_page when needed. Say a short filler like 調べますね before calling.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: "検索語。来場者の言語に合わせる" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "fetch_page",
+    description:
+      "Read a web page as Markdown. Use only when web_search snippets are not enough to answer. Takes 1-3 seconds.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { url: { type: Type.STRING, description: "web_search が返した URL" } },
+      required: ["url"],
+    },
+  },
+];
+
 const SYSTEM_PROMPT =
   "あなたは展示ブースの明るい受付嬢レムです。日本語で、短く元気に話します。" +
-  "一文は40文字以内。相手の話に具体的に反応し、質問で会話を続けます。";
+  "一文は40文字以内。相手の話に具体的に反応し、質問で会話を続けます。" +
+  "天気を聞かれたら get_weather を使います（web_search は使わない）。" +
+  "施設の営業時間・場所・料金は【施設情報】に書いてあることだけを答えます。" +
+  "イベント・ニュース・店など、自分が知らない最新情報を聞かれたら web_search を使います。" +
+  "呼ぶ前に「ちょっと調べますね」と一言言ってください。" +
+  "web_search の抜粋に気温・降水確率・営業時間などの具体的な値が無いときは、必ず fetch_page で1ページ読んでから答えます。" +
+  "同じ検索を言い換えて2回やらない。検索は1回、本文は最大2ページまで。" +
+  "答えるときは出典のサイト名を添えます。調べられなかったときは推測せず「今は調べられない」と言います。" +
+  "雑談や一般常識では検索しません。";
+// shortcut: ツール実行中のフィラーはモデル任せ（言わないことがある）。実機で無音が目立つならローカルTTSを足す
 
 function systemPromptWith(context?: string): string {
-  if (!context) return SYSTEM_PROMPT;
-  return `${SYSTEM_PROMPT}\n[来場者状況: ${context}] この様子を踏まえて第一声を調整して。`;
+  const base = `${SYSTEM_PROMPT}\n${facilityPrompt()}`;
+  if (!context) return base;
+  return `${base}\n[来場者状況: ${context}] この様子を踏まえて第一声を調整して。`;
 }
 
 interface UseGeminiLiveOptions {
@@ -45,6 +93,14 @@ interface UseGeminiLiveOptions {
   onError?: (e: Error) => void;
   onInputText?: (t: string) => void;
   onOutputText?: (t: string) => void;
+  /** 受付用の既定プロンプトを差し替える（DJなど） */
+  systemPrompt?: string;
+  /** 既定の受付ツールを差し替える */
+  tools?: FunctionDeclaration[];
+  /** ツール実行を差し替える。未指定なら受付用の天気・検索 */
+  onToolCall?: (call: FunctionCall) => Promise<Record<string, unknown>>;
+  /** false にするとマイクを開かない（MCの音声出力専用） */
+  capture?: boolean;
 }
 
 function b64encodeBytes(bytes: Uint8Array): string {
@@ -63,12 +119,22 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
   onInputTextRef.current = onInputText;
   const onOutputTextRef = useRef(onOutputText);
   onOutputTextRef.current = onOutputText;
+  const systemPromptRef = useRef(options.systemPrompt);
+  systemPromptRef.current = options.systemPrompt;
+  const toolsRef = useRef(options.tools);
+  toolsRef.current = options.tools;
+  const customToolRef = useRef(options.onToolCall);
+  customToolRef.current = options.onToolCall;
+  const captureRef = useRef(options.capture ?? true);
+  captureRef.current = options.capture ?? true;
 
   const sessionRef = useRef<LiveSession | null>(null);
   const capCtxRef = useRef<AudioContext | null>(null);
   const capNodeRef = useRef<AudioWorkletNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const playCtxRef = useRef<AudioContext | null>(null);
+  const playGainRef = useRef<GainNode | null>(null);
+  const mutedRef = useRef(false);
   // 再生追跡は単一refに集約 (playing=再生中 / cursor=次chunk予約時刻 / gen=世代 / current=直近source / active=予約済みsource群)
   const playRef = useRef<{
     playing: boolean;
@@ -90,6 +156,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     firstAudioMs: null,
     turns: 0,
     disconnects: 0,
+    toolRuns: 0,
+    lastTool: null,
   });
   const logIdRef = useRef(0);
   const connectStartRef = useRef<number | null>(null);
@@ -150,6 +218,11 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
       }
       const ctx = playCtxRef.current;
       if (ctx.state === "suspended") await ctx.resume();
+      if (!playGainRef.current) {
+        playGainRef.current = ctx.createGain();
+        playGainRef.current.gain.value = mutedRef.current ? 0 : 1;
+        playGainRef.current.connect(ctx.destination);
+      }
       setStateSafe("speaking");
 
       // ギャップレス再生: onended連鎖だとJSスレッドの隙間でブツ切れになるため、
@@ -158,7 +231,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
       buf.copyToChannel(pcm as Float32Array<ArrayBuffer>, 0);
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(ctx.destination);
+      src.connect(playGainRef.current);
       const p = playRef.current;
       p.active.add(src);
       const now = ctx.currentTime;
@@ -189,8 +262,95 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     [setStateSafe]
   );
 
+  // モデルが選んだツールを実行して結果を返す。失敗は error で返し、推測で答えさせない。
+  const handleToolCalls = useCallback(async (calls: FunctionCall[]) => {
+    const responses = await Promise.all(
+      calls.map(async (call) => {
+        const started = performance.now();
+        const name = call.name ?? "";
+        const custom = customToolRef.current;
+        const query = custom
+          ? JSON.stringify(call.args ?? {})
+          : name === "get_weather"
+            ? "天気"
+            : name === "web_search"
+              ? String(call.args?.query ?? "")
+              : String(call.args?.url ?? "");
+        // DJ など用途別のツール実行。渡されていれば受付用の分岐は使わない。
+        if (custom) {
+          let response: Record<string, unknown>;
+          let ok = true;
+          try {
+            response = await custom(call);
+          } catch (e) {
+            ok = false;
+            response = { error: "unavailable" };
+            console.error(`[Gemini] tool ${name} failed:`, e);
+          }
+          const ms = performance.now() - started;
+          setMetrics((m) => ({ ...m, toolRuns: m.toolRuns + 1, lastTool: { name, query, ms, ok } }));
+          return { id: call.id, name, response };
+        }
+        let ok = true;
+        let response: Record<string, unknown>;
+        try {
+          if (name === "get_weather") {
+            const report = await getWeather();
+            response = { output: report.text };
+            console.info(`[Gemini] get_weather ${report.place}`);
+          } else if (name === "web_search") {
+            // 生のJSON配列より、モデルが読みやすいテキストにして返す。
+            // NOTE行が無いと「抜粋に答えが無い → 調べられない」で止まる（実機で発生）
+            const results = await webSearch(query);
+            if (results.length === 0) {
+              ok = false;
+              response = { error: "no results" };
+              return { id: call.id, name, response };
+            }
+            const text = results
+              .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
+              .join("\n\n");
+            response = {
+              output:
+                text +
+                "\n\nNOTE: 気温・降水確率・営業時間・料金などの具体的な値が上の抜粋に無いときは、" +
+                "この中のURLを fetch_page で読んでから答える。同じ検索を言い換えて繰り返さない。",
+            };
+            console.info(`[Gemini] web_search "${query}" → ${results.length}件`);
+          } else if (name === "fetch_page") {
+            const markdown = await fetchPage(query);
+            response = { output: markdown };
+            console.info(`[Gemini] fetch_page ${query} → ${markdown.length}文字`);
+          } else {
+            ok = false;
+            response = { error: `unknown tool: ${name}` };
+          }
+        } catch (e) {
+          ok = false;
+          response = { error: "unavailable" };
+          console.error(`[Gemini] tool ${name} failed:`, e);
+        }
+        const ms = performance.now() - started;
+        setMetrics((m) => ({ ...m, toolRuns: m.toolRuns + 1, lastTool: { name, query, ms, ok } }));
+        return { id: call.id, name, response };
+      })
+    );
+    try {
+      sessionRef.current?.sendToolResponse({ functionResponses: responses });
+    } catch (e) {
+      console.error("[Gemini] sendToolResponse failed:", e);
+    }
+  }, []);
+
   const handleServerMessage = useCallback(
     async (msg: LiveServerMessage) => {
+      // toolCall は serverContent を伴わないので先に処理する
+      if (msg.toolCall?.functionCalls?.length) {
+        for (const call of msg.toolCall.functionCalls) {
+          console.info("[Gemini] toolCall", call.name, call.args);
+        }
+        void handleToolCalls(msg.toolCall.functionCalls);
+      }
       const sc = msg.serverContent;
       if (!sc) return;
       if (sc.turnComplete) {
@@ -231,7 +391,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
         onInputTextRef.current?.(inT);
       }
     },
-    [playPcm24k, stopPlayback, setStateSafe, appendLog]
+    [playPcm24k, stopPlayback, setStateSafe, appendLog, handleToolCalls]
   );
 
   const startCapture = useCallback(async () => {
@@ -327,24 +487,44 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     firstAudioDoneRef.current = false;
     setMetrics((m) => ({ ...m, connectMs: null, firstAudioMs: null }));
     setStateSafe("connecting");
-    setVia("キー確認中…");
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-    if (!apiKey) {
+    setVia("トークン取得中…");
+    // キーではなく Studio 発行の短命トークンで接続する（D-018）
+    let apiKey: string;
+    try {
+      const res = await fetch("/studio/api/live/token", {
+        method: "POST",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { token?: string };
+      if (!data.token) throw new Error("token なし");
+      apiKey = data.token;
+    } catch (e) {
       setVia("");
       setStateSafe("error");
-      throw new Error("VITE_GEMINI_API_KEY 未設定 (直下.env を確認)");
+      throw new Error(
+        `短命トークンを取得できません（Studio 未起動 / GEMINI_API_KEY 未設定？）: ${(e as Error).message}`,
+      );
     }
-    setVia("SDK直結");
-    const ai = new GoogleGenAI({ apiKey });
+    setVia("SDK直結（短命トークン）");
+    // 短命トークンの Live 接続は SDK 上 v1alpha のみ（SDK 自身の警告に従う）
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1alpha" } });
     const handleMessage = handleServerMessage;
+    const customPrompt = systemPromptRef.current;
+    const systemInstruction = customPrompt
+      ? context
+        ? `${customPrompt}\n[状況: ${context}]`
+        : customPrompt
+      : systemPromptWith(context);
     const session = await ai.live.connect({
       model: MODEL,
       config: {
         responseModalities: [Modality.AUDIO],
-        systemInstruction: systemPromptWith(context),
+        systemInstruction,
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
+        tools: [{ functionDeclarations: toolsRef.current ?? TOOL_DECLARATIONS }],
       },
       callbacks: {
         onopen: () => {
@@ -353,8 +533,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
             const ms = performance.now() - connectStartRef.current;
             setMetrics((m) => ({ ...m, connectMs: ms }));
           }
-          setStateSafe("listening");
-          void startCapture().catch((e) => onErrorRef.current?.(e as Error));
+          if (captureRef.current) {
+            void startCapture().catch((e) => onErrorRef.current?.(e as Error));
+          }
         },
         onmessage: (msg: LiveServerMessage) => {
           if (attemptRef.current !== myAttempt) return;
@@ -380,6 +561,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
       return;
     }
     sessionRef.current = session;
+    // prompt() が使えるのは sessionRef 代入後。onopen ではなくここで listening にする。
+    if (attemptRef.current === myAttempt && stateRef.current === "connecting") setStateSafe("listening");
   }, [setStateSafe, handleServerMessage, startCapture]);
 
   /** 会話中の文脈追加（応答を誘発しない）。接近後の属性1枚推定用。 */
@@ -392,6 +575,26 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     } catch (e) {
       console.error("[Gemini] inject failed:", e);
     }
+  }, []);
+
+  /** テキストでターンを投げて応答を誘発する（DJのMC用） */
+  const prompt = useCallback((text: string) => {
+    try {
+      sessionRef.current?.sendClientContent({
+        turns: [{ role: "user", parts: [{ text }] }],
+        turnComplete: true,
+      });
+    } catch (e) {
+      console.error("[Gemini] prompt failed:", e);
+    }
+  }, []);
+
+  /** MC音声のミュート（音楽側とは別のバス） */
+  const setMuted = useCallback((muted: boolean) => {
+    mutedRef.current = muted;
+    const gain = playGainRef.current;
+    const ctx = playCtxRef.current;
+    if (gain && ctx) gain.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
   }, []);
 
   /** 手動ターン確定 */
@@ -438,6 +641,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
       stopPlayback();
       void playCtxRef.current?.close().catch(() => {});
       playCtxRef.current = null;
+      playGainRef.current = null;
     };
   }, [stopCapture, stopPlayback]);
 
@@ -448,6 +652,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     disconnect,
     commitUtterance,
     injectContext,
+    prompt,
+    setMuted,
     resetTranscript,
     log,
     metrics,

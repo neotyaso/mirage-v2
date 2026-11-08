@@ -4,6 +4,9 @@ import { SERVICE_URLS, health } from "./dev.mjs";
 const checks = [
   { name: "フロントエンド", key: "vite", timeoutMs: 4_000, optional: false },
   { name: "Ollama(任意)", key: "ollama", timeoutMs: 4_000, optional: true },
+  { name: "Studio(検索API)", key: "studio", timeoutMs: 4_000, optional: false },
+  { name: "検索API(ddgs・任意)", key: "ddgs", timeoutMs: 4_000, optional: true },
+  { name: "本文取得(crawl4ai)", key: "crawl4ai", timeoutMs: 4_000, optional: true },
 ];
 
 async function checkService(check) {

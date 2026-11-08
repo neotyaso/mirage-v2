@@ -21,6 +21,13 @@ const EYE_CORNER_LANDMARK_INDICES = [33, 133, 362, 263];
 const LEFT_EYE_INDICES = [33, 133];
 const RIGHT_EYE_INDICES = [362, 263];
 
+export interface FaceBox {
+  x: number; // 0〜1（左→右）
+  y: number; // 0〜1（上→下）
+  w: number; // 0〜1
+  h: number; // 0〜1
+}
+
 export interface FaceExpression {
   smile: number;    // 0〜1
   surprised: number; // 0〜1
@@ -99,6 +106,8 @@ export function useFaceDetection(enabled: boolean = true) {
   const faceYawRef = useRef(0); // 主対象の頭の左右向き（ラジアン。0=正面、絶対値が大きいほどそっぽを向いている）
   const allFaceCentersRef = useRef<FaceCenter[]>([]);
   const allEyeCentersRef = useRef<FaceCenter[]>([]);
+  const faceBoxesRef = useRef<FaceBox[]>([]); // 全顔の矩形（Studioのライブ表示用）
+  const primaryFaceIndexRef = useRef(0); // 主対象のインデックス（faceBoxes/expressionsと対応）
   const expressionRef = useRef<FaceExpression>({ smile: 0, surprised: 0, confused: 0 });
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,20 +170,15 @@ export function useFaceDetection(enabled: boolean = true) {
           lastSeen = now;
 
           // 各顔の中心・横幅をランドマークのバウンディングボックスから計算
-          const centers: FaceCenter[] = landmarks.map((lm) => {
+          const boxes: FaceBox[] = landmarks.map((lm) => {
             const xs = lm.map((p) => p.x);
             const ys = lm.map((p) => p.y);
             const minX = Math.min(...xs), maxX = Math.max(...xs);
             const minY = Math.min(...ys), maxY = Math.max(...ys);
-            return {
-              x: (minX + maxX) / 2,
-              y: (minY + maxY) / 2,
-            };
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
           });
-          const widths = landmarks.map((lm) => {
-            const xs = lm.map((p) => p.x);
-            return Math.max(...xs) - Math.min(...xs);
-          });
+          const centers: FaceCenter[] = boxes.map((b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 }));
+          const widths = boxes.map((b) => b.w);
           const eyeCenters: FaceCenter[] = landmarks.map((lm, i) => {
             const pts = EYE_CORNER_LANDMARK_INDICES.map((idx) => lm[idx]).filter(Boolean);
             if (pts.length === 0) return centers[i];
@@ -211,6 +215,8 @@ export function useFaceDetection(enabled: boolean = true) {
             });
           }
           primaryCenter = centers[primaryIdx];
+          primaryFaceIndexRef.current = primaryIdx;
+          faceBoxesRef.current = boxes;
 
           allFaceCentersRef.current = centers;
           faceCenterRef.current = centers[primaryIdx] ?? null;
@@ -260,6 +266,8 @@ export function useFaceDetection(enabled: boolean = true) {
           faceYawRef.current = 0;
           allFaceCentersRef.current = [];
           allEyeCentersRef.current = [];
+          faceBoxesRef.current = [];
+          primaryFaceIndexRef.current = 0;
           expressionRef.current = { smile: 0, surprised: 0, confused: 0 };
         }
 
@@ -324,6 +332,8 @@ export function useFaceDetection(enabled: boolean = true) {
     faceYawRef,
     allFaceCentersRef,
     allEyeCentersRef,
+    faceBoxesRef,
+    primaryFaceIndexRef,
     expressionRef,
     ready,
     error,

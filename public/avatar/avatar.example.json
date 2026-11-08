@@ -1,0 +1,5 @@
+{
+  "file": "/avatar/character.png",
+  "eyes": { "x": 50, "y": 24, "gap": 12, "rx": 4, "ry": 3, "color": "#f2d9c9" },
+  "mouth": { "x": 50, "y": 33, "rx": 5, "ry": 2, "color": "#8c4a4a" }
+}

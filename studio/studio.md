@@ -71,28 +71,31 @@ Studioを小さく動かしながら、React・TypeScript・Next.js・Gitを一�
 
 > 「Mirage が今何をしているのかを、ブラウザから見られる」
 
-- Login（まずは簡易認証でよい。Auth.js 等への置き換えは後）
-- Dashboard: Mirage の状態 / 現在の Interaction 状態（ゾーン、フェーズ、注目、会話、アクション）
-- Session List / Session Detail（Interaction Timeline）
+- Login（管理者1ロール。まずは簡易認証、Auth.js 等への置き換えは後）
+- Dashboard: Mirage の状態 / 検知中の来場者 / アクティブ・待ち / 言語 / 現在の Interaction 状態
+- Session List / Session Detail（会話ログ・Interaction Timeline）
+- Settings: 言語・閾値・表示（まずは読み取り中心、変更の反映は次段）
 
-後回し（この順で育てる）: 設定変更 → DB 本格化 → Analytics → 遠隔操作 → 複数 Mirage → AWS
+後回し（この順で育てる）: 設定変更の反映 → Analytics → 遠隔操作 → 複数 Mirage → PostgreSQL → AWS
 
 ---
 
 ## 構成
 
-- Mirage 本体 = このリポジトリ（Vite + React + Three.js、展示PC）
+- Mirage 本体 = このリポジトリ（Vite + React、展示PC）
 - Mirage Studio = 別の Next.js アプリ。このリポジトリの `studio/` に置く（別リポジトリに split するかは後で判断）
-- Mirage → Studio: WebSocket で状態・イベントを送信（Studio 死亡時も本体は自律動作継続が大前提）
+- Mirage → Studio: WebSocket（状態・イベント）＋ REST（セッション・設定）。デバイストークンで認証
 - Studio → Mirage: 将来的に設定変更・操作命令（MVP では受信のみ）
+- Studio が落ちても Mirage は自律動作を継続する（最優先）
 
 ---
 
 ## 技術スタック（仮。実装の都度、その都度説明して決める）
 
 - Next.js（App Router）/ React / TypeScript / Tailwind
-- DB: PostgreSQL + ORM（Drizzle or Prisma）— **セッション保存を実装する段まで DB は作らない**
-- 認証: MVP 初期は簡易（環境変数 + Basic 認証想定）
+- DB: SQLite + ORM（Drizzle or Prisma）で開始。複数端末・リモート運用時に PostgreSQL へ
+- 認証: 管理者1ロール。環境変数＋署名付き HttpOnly Cookie。Auth.js は後
+- Mirage→Studio: 管理セッションとは別のデバイストークン
 
 <!-- ponytail: 簡易認証。複数管理者・権限管理が要る段階で Auth.js に置き換え -->
 
@@ -106,14 +109,15 @@ Studioを小さく動かしながら、React・TypeScript・Next.js・Gitを一�
 3. useStateで状態を変更してみる（ONLINE/OFFLINE切り替え等）
 
 ### Phase 2: 実データとリアルタイム通信
-4. MirageのAPIから実際の状態を取得する（REST）
-5. WebSocketでリアルタイム更新する
+4. Studio の API から Mirage のセッション/設定を取得する（REST）
+5. WebSocket で Mirage の状態・イベントをリアルタイム更新する
 
 ### Phase 3: セッション管理と認証
 6. セッションの保存とSession List / Detail、認証を実装しDashboardとして統合する。未認証の管理画面をインターネットに公開しない
+7. 複数人（検知中/アクティブ/待ち）と JA/EN の表示を Dashboard に足す
 
 ### Phase 4 以降
-7. 以降: 設定変更 → Analytics → 遠隔操作 → 複数台
+8. 以降: 設定変更の反映 → Analytics → 遠隔操作 → 複数台（PostgreSQL）
 
 各ステップの小さな変更をGit学習の材料にする。
 

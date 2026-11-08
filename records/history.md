@@ -1628,3 +1628,67 @@ gitだけ今やれ。残りは後でいい。
 - `scripts/test-*.mjs` 2 本を `pnpm test` 1 コマンドにまとめる（要件 §10 P14）
 - CI（テスト必須チェック）・監視（P15）
 - `scripts/dev.mjs` のヘッダコメントが旧構成（AivisSpeech/Ollama前提）を指している。現行（Gemini Live + Groq/ローカルフォールバック）とズレている
+
+---
+
+## ★ 2026-10-29: 再スコープ（バックエンド・DB・記憶を撤去／通し1本の品質保証へ）
+
+**決定**: [D-012](../docs/decisions.md) / [D-013](../docs/decisions.md)。
+
+- P11（Go + PostgreSQL）、P12（会話履歴のサーバ永続化）、P13（長期記憶）、P9（localStorage の会話記憶）を破棄。バックエンド・DB を持たず、フロント＋Gemini の1本にする。
+- 今回の完成形は 1施設・1入口・1人ずつ・日本語のみの案内フロー1本（接近 → 第一声 → 用件 → 映像文脈 → 回答 → 見送り → ログ）。
+- 深さの軸は「通し1本の品質保証」＝解決率/完遂率・p95・30分安定・縮退・テスト/CI。
+- P7 は「前回文脈」を外して任意。P8（感情タグ）と P10 の実素材は任意。P16 を品質保証の終点にする。
+- 旧 P11〜P13 の詳細な完了条件は git 履歴（この変更以前）を参照。
+- リスク: Gemini の API キーはブラウザ露出のまま。ローカル展示前提とし、公開時は制限付きキー＋quota、必要なら最小プロキシを別途用意する。
+
+---
+
+## ★ 2026-10-29（追記）: 複数人・多言語・管理画面・認証を追加
+
+**決定**: [D-014](../docs/decisions.md) / [D-015](../docs/decisions.md) / [D-016](../docs/decisions.md)。
+
+- 「複数人同時対応・多言語・管理画面・認証もやる」を受けてスコープに追加。ただし「検知は複数・会話は1人ずつ」「JA/EN 自動判定」「管理者1ロール」に絞る。
+- 管理・認証・運用データは `studio/`（Next.js）に集約。DB はまず SQLite、複数端末/リモート時に PostgreSQL。Go は引き続き不採用。
+- AIの長期記憶は引き続きスコープ外。会話ログは運用記録として保存するが、次回の文脈には注入しない。
+- ロードマップに P17（Studio管理基盤）→ P18（管理画面）→ P19（複数人）→ P20（多言語）を追加。P14/P15 は並行、P16 で通し品質。
+- 管理画面の会話ログには個人情報が入り得る。保存期間と削除手順を P17/P18 で決める。顔画像・顔特徴量は保存しない。
+
+---
+
+## ★ 2026-10-31（追記）: リアルタイムWeb検索を核に据える
+
+**決定**: [D-017](../docs/decisions.md)。
+
+- 「最新情報も答えられるようにしたい」を受けて、Web検索を今回の核に据えた。管理画面（P17/P18）より先に、P21（検索・取得基盤）→ P22（Live からの呼び出し）→ P23（品質・遅延の計測）を置く。
+- 調査結果: DuckDuckGo の HTML エンドポイントは 2026-10-31 時点で HTTP 202 のボット判定ページを返し結果 0 件（GET/POST とも）。素のスクレイピングは不可。
+- 採用: 検索は `ddgs`（v9.16.1）の API サーバ、本文は crawl4ai（v0.9.5）の `/md`。どちらも localhost のみ、crawl4ai はトークン必須。実行場所は Studio の API Route（ブラウザ直結にしない）。
+- 不採用: ブラウザからの DDG 直叩き（CORS＋ボット判定）、Google CSE / Brave API（キーと課金）、crawl4ai の LLM 抽出（LLM 二重で遅く高い）。
+- 環境メモ: このMacは Docker なし・Python 3.9.6。`uv` で Python 3.12 を取得して `uvx --from 'ddgs[api]' ddgs api` で検索 API を起動する方針。crawl4ai は未導入（Docker か pip + Playwright のどちらか）。
+- 実装: `studio/lib/webSearch.ts` と `studio/app/api/web/search/route.ts`。5分キャッシュ・6秒タイムアウト・外部文字列の長さ上限つき。curl で疎通確認済み（キャッシュヒット 4ms）。
+- リスク: 検索 API はまだ無認証（LAN 内の誰でも叩ける）。P17 の認証導入時に配下へ入れる。`ddgs` は上流変更で壊れやすいのでバージョン固定。
+- 副産物: `studio/` で `pnpm install` が何もせず終わる問題（ルートの `pnpm-workspace.yaml` に `packages` が無いため）。`pnpm install --ignore-workspace` で回避した。恒久対応は未着手。
+
+---
+
+## ★ 2026-11-02（追記）: crawl4ai を uv で導入、P21 の基盤が完成
+
+- crawl4ai は Docker ではなく **uv tool**（Python 3.12）で導入した。`uv tool install --python 3.12 crawl4ai` → `crawl4ai-setup`（Playwright Chromium を取得）。Docker Desktop は入れていない。
+- 公式 Docker サーバは使わず、**`scripts/crawl-server.py`**（FastAPI 約50行）で `/md` を再現。公式と同じ `POST /md {"url"} → {"markdown"}` の形にしたので、後で Docker に移しても Studio 側は変更不要。
+  - 起動: `uv run --python 3.12 --with crawl4ai --with fastapi --with uvicorn scripts/crawl-server.py`
+  - `127.0.0.1:11235` のみ束縛。http(s) 以外と private/loopback の URL は 400 で拒否（SSRF 対策）。Markdown は 8000 文字で切る。
+- Studio に `GET /api/web/search`（ddgs）と `POST /api/web/fetch`（crawl4ai）を実装。search → fetch の連鎖を curl で確認（本文 8000 文字）。
+- 分かったこと: ddgs のバックエンドは不安定。`backend=duckduckgo` / `brave` / `mojeek` は同じ日に「No results found」、`bing` は無関係な結果。**auto（既定のローテーション）が最もマシ**なので backend は固定しない。検索品質は P23 で測る。
+- 残り: P21 の認証（P17 待ち）、P22（Gemini Live からの呼び出し）。
+
+---
+
+## ★ 2026-11-03（追記）: P22 Gemini Live の function calling を配線
+
+- `useGeminiLive` に `web_search`（ddgs）と `fetch_page`（crawl4ai）の2ツールを宣言し、`msg.toolCall` → 実行 → `sendToolResponse` を実装。`toolCall` は `serverContent` を伴わないため、既存の `if (!sc) return` より前に処理する必要があった。
+- 「2段構え」はモデルに判断させる形にした: まず `web_search`（スニペット、~0.5〜4s）、足りないときだけ `fetch_page`（+1〜3s）。コード側のキーワード判定やスニペット長ヒューリスティックは持たない。
+- フィラー（「調べますね」）はプロンプト指示のみ。ローカルTTSを重ねるとモデルの声と二重になるため、まずモデルに言わせる。実機で無音が目立つ場合のみローカルTTSを足す（コードに shortcut コメント）。
+- 失敗時は `{error: "unavailable"}` をツール応答として返し、プロンプトで「推測せず、今は調べられないと言う」を指示。検索結果の出典はサイト名を答えるよう指示。
+- ログ: `GeminiMetrics` に `toolRuns` / `lastTool` を追加し、`useVisitorLoop` が `web_search` イベント（tool / query / ms / ok）を JSONL に残す。`TrackEventType` に `web_search` を追加。
+- 通信: ブラウザ（:5173）→ Studio（:3000）は CORS になるため、既存の `/ollama` と同じく Vite proxy `/studio` を追加。`src/web/search.ts` が `/studio/api/web/*` を叩く。
+- 検証: `tsc --noEmit` 通過。Vite proxy 経由で search / fetch の疎通を確認。**Gemini Live からの実際のツール呼び出しは未検証**（APIキーとマイクが必要）。
