@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { RefObject } from "react";
-import { captureFrame } from "../vision/visionComment";
+import { captureFrame } from "../vision/capture";
 import { estimateDistanceM } from "./useFaceDetection";
 import type { FaceBox, FaceExpression } from "./useFaceDetection";
 
