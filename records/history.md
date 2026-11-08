@@ -1692,3 +1692,17 @@ gitだけ今やれ。残りは後でいい。
 - ログ: `GeminiMetrics` に `toolRuns` / `lastTool` を追加し、`useVisitorLoop` が `web_search` イベント（tool / query / ms / ok）を JSONL に残す。`TrackEventType` に `web_search` を追加。
 - 通信: ブラウザ（:5173）→ Studio（:3000）は CORS になるため、既存の `/ollama` と同じく Vite proxy `/studio` を追加。`src/web/search.ts` が `/studio/api/web/*` を叩く。
 - 検証: `tsc --noEmit` 通過。Vite proxy 経由で search / fetch の疎通を確認。**Gemini Live からの実際のツール呼び出しは未検証**（APIキーとマイクが必要）。
+
+---
+
+## ★ 2026-11-08（追記）: AI DJ を本線に切り替え、レセプションを退役
+
+**決定**: [D-023](../docs/decisions.md) / [D-022](../docs/decisions.md)（本線化）。
+
+- `ai-dj` ブランチを作成し、AI DJ / 3Dパフォーマーを本線にした。`/` を DJ ステージに変更し、`dance.html` は互換エイリアスとして残す。
+- `README.md` / `docs/requirements.md` / `docs/roadmap.md` / `docs/NEXT.md` を AI DJ 向けに書き換え。レセプション時代の requirements / roadmap は `docs/legacy/` にアーカイブした。
+- レセプションの会話 UI・2D キャラクター・ビジター会話フローを削除。カメラ／表情／トラッキング／Studio の短命トークン／`useGeminiLive` は再利用資産として残した。
+- `visionComment.ts` からフレーム取得だけを `vision/capture.ts` に分離し、Studio のカメラ監視は維持。
+- AI DJ の実装済み範囲: ShowAction、2曲のシンセ、停止フェード、ダッキング、拍位相、BPM 同期、歩行、プロシージャル身体、Gemini Live MC（出力専用・8小節判断・6ツール）、ステージ UI。
+- 未着手: `nextBar` 量子化、観客入力、本物の曲、生成 special、`MotionSource`、リップシンク、DJ の純関数テスト。
+- リスク: MC が出力専用のため観客との双方向会話はまだない。歩行は直線移動で足滑り補正なし。音楽はシンセ2曲でライセンス未解決。

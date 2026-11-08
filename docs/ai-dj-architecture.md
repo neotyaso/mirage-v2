@@ -1,9 +1,9 @@
 # AI DJ / 3D Performance Architecture
 
-> 最終更新: 2026-11-06  
-> 状態: Phase 1〜4のスパイク実装済み。`dance.html` で ShowAction、MusicTransport、歩行、プロシージャル身体、Gemini Live MC/Director まで接続。  
+> 最終更新: 2026-11-08  
+> 状態: **本線**。Phase 0〜4 実装済み。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、プロシージャル身体、Gemini Live MC/Director まで接続。  
 > 現状: 音は2パターンのシンセ、身体はロボットのクリップ＋手続き層。生成special・本物の曲・観客入力・リップシンクは未着手。  
-> 注意: `docs/requirements.md` / `docs/roadmap.md` はレセプション本線のまま。この文書は並行スパイクの正本候補。
+> 関連: 要件は [requirements.md](requirements.md)、着手順は [roadmap.md](roadmap.md)、決定は [decisions.md](decisions.md)（D-022 / D-023）。
 
 ---
 
@@ -32,7 +32,7 @@
      → 音楽停止 → トーク → 歩く → 次の曲 → ダンス
 ```
 
-### 1.2 何を目指さないか（初期スパイク）
+### 1.2 何を目指さないか（初期実装）
 
 - LLMが毎フレーム関節角度を出すこと
 - 完成した振付を何パターンも持って、その中から選ぶだけの構成
@@ -446,8 +446,7 @@ LLMが「今喋るべきか」「何を言うか」を自分で決める。定�
 - 通常のMC: Gemini Liveのネイティブ音声
 - 拍に正確に合わせたい台詞: TTSをキューに積む
 - 発話中: 音楽を-8dB程度ダッキング
-- 既存の `speakingRef` / `volumeRef` を再利用
-- 音声セッションは `src/hooks/useGeminiLive.ts` / `src/hooks/useConversationEngine.ts` の仕組みを再利用し、DJ用のシステムプロンプトだけ差し替える
+- `useGeminiLive` の `state` / `volume` を使い、DJ用のシステムプロンプトとツールだけ差し替える
 
 ### 8.7 注意
 
@@ -511,20 +510,20 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 ### Phase 0: 3Dステージ（完了）
 
-- `dance.html`
+- `index.html`（`dance.html` は互換エイリアス）
 - Three.js + ロボット
 - クリップ再生、テキスト→クリップ、BPM、シンセ音
 - Bloom、ライト、粒子、レスポンシブ
 - `pnpm build` / `tsc` 通過
 
-### Phase 1: ショー状態機械（スパイク実装済み）
+### Phase 1: ショー状態機械（実装済み）
 
 - `ShowAction`（dance / stopMusic / playTrack / walkTo / talk / gesture）を `src/dance/show.ts` に定義
 - 「止めて」「歩いて」「次の曲」「話して」を実装
 - `DanceAudio` に2曲（NEON DRIVE / PULSE）、フェード停止、ダッキング、拍位相を追加
 - 5シーケンスを通す: 踊る→止める→話す→歩く→次の曲で踊る
 
-### Phase 2: MCループ（スパイク実装済み）
+### Phase 2: MCループ（実装済み）
 
 - 8小節ごとに `buildMcPrompt` で show state を送る
 - Gemini LiveにDJ人格プロンプトを渡す
@@ -532,14 +531,14 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - 声はGemini Liveのネイティブ音声。マイクは開かない（`capture:false`）のでハウリングしない
 - カメラの人数・表情はまだ入力していない
 
-### Phase 3: プロシージャル身体（スパイク実装済み）
+### Phase 3: プロシージャル身体（実装済み）
 
 - 拍同期のルートbounce / sway / 頭のnod
 - 歩行はルート移動＋Walkingクリップ
 - BPMに合わせて `AnimationAction.timeScale` を変更
 - クリップはatom/フォールバックとして残す
 
-### Phase 4: LLM Director（スパイク実装済み）
+### Phase 4: LLM Director（実装済み）
 
 - Gemini Liveのツールから `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` を実行
 - MCの判断と発話を同じターンで行う
@@ -575,7 +574,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 | ファイル | 内容 |
 | --- | --- |
-| `dance.html` | 3Dステージのエントリ |
+| `index.html` | 3Dステージのエントリ（`/`）。`dance.html` は互換エイリアス |
 | `src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、プロシージャル身体、UI、MC接続 |
 | `src/dance/show.ts` | `ShowAction` / `ShowState`、2曲、ステージマーク |
 | `src/dance/mc.ts` | DJ用システムプロンプト、Gemini Liveツール、MCプロンプト |
@@ -583,11 +582,11 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 | `src/dance/dance.css` | ステージUI（MCパネル含む） |
 | `src/hooks/useGeminiLive.ts` | カスタムプロンプト／ツール／ツール実行／`capture:false`／`prompt()` を追加 |
 | `public/models/RobotExpressive.glb` | 仮ロボット（CC0: Tomás Laulhé / Don McCurdy） |
-| `vite.config.ts` | `dance.html` をビルド入力に追加 |
+| `vite.config.ts` | `index.html` と `dance.html` をビルド入力に持つ |
 
 ### 実装メモ
 
-- **MCは出力専用**。`capture:false` でマイクを開かないため、スピーカーの音を拾わない。会話入力はレセプション側の既存経路を使う。
+- **MCは出力専用**。`capture:false` でマイクを開かないため、スピーカーの音を拾わない。観客との双方向会話は、音楽の回り込み対策を設計してから足す。
 - **MCの判断**。8小節ごとに `buildMcPrompt` を送り、モデルが発話するか黙るかを決める。「話して」ボタンは強制プロンプト。
 - **Ducking**。`gemini.state === "speaking"` または `mode === "talk"` の間、音楽バスを0.28に下げる。
 - **BPM同期**。音楽クロックの拍位相でルートbounce/sway/head nodを生成し、`timeScale = bpm / 112` でクリップ速度を合わせる。
@@ -611,7 +610,8 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 ```bash
 pnpm dev
-# http://localhost:5173/dance.html
+# http://localhost:5173
+# http://localhost:5173/dance.html （互換エイリアス）
 ```
 
 MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無くてもステージ操作は動く。
@@ -624,9 +624,9 @@ MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無
 - 最初に試す生成モデル: TM2D / FlowerDance / EDGE
 - 音楽: シンセのまま / CC0楽曲 / 生成音楽
 - 展示の音響: スピーカー＋マイクの回り込み対策
-- メインエントリを `/` にする時期
-- `docs/requirements.md` / `docs/roadmap.md` の更新時期
 - 90/10の比率が本当に適切か（最初の実測で見直す）
+- MCの判断周期を8小節から短くするか（観客入力とnextBarの実装時）
+- 本物の曲をいつ入れるか（ライセンスとビート解析）
 
 ## 13. リスク
 
