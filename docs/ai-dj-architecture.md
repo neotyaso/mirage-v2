@@ -241,7 +241,7 @@ type ShowAction =
 // 沈黙はShowActionではなく、MCが「ツールを呼ばず音声も出さない」で表現する。
 ```
 
-> 実装では `playTrack.at` は未実装（即時実行）。`Cue` は将来の生成モデル用で、今は `dance` の `energy` だけが身体の振幅に効く。
+> 実装では `playTrack.at` は未実装（即時実行）。`dance` は `style` / `moves` / `energy` を身体へ渡す。生成モデル用の `Cue.description` はまだ使っていない。
 
 ### 5.4 4小節プランの例
 
@@ -303,6 +303,8 @@ Dance（cute / 8小節）
 - pose
 
 **重要:** atomは「完成振付」ではなく「動きの部品」。並び・タイミング・強弱はLLMが毎小節組む。
+
+**実装（2026-11-08）**: `src/dance/dance.ts` の `sampleDance(clock, cue)` が base groove と atom を合成する純関数。style は `cute / cool / hype / chill`、moves は LLM の `dance` ツールから小節ごとに指定する。Three.js 側は `DanceStage.tsx` が GLTFLoader の sanitize 名を吸収してボーンへ加算する。
 
 ### 6.3 10%側
 
@@ -531,18 +533,21 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - 声はGemini Liveのネイティブ音声。マイクは開かない（`capture:false`）のでハウリングしない
 - カメラの人数・表情はまだ入力していない
 
-### Phase 3: プロシージャル身体（実装済み）
+### Phase 3: ダンス核 / プロシージャル身体（実装済み）
 
-- 拍同期のルートbounce / sway / 頭のnod
+- `src/dance/dance.ts` の純関数が base groove（bounce / sway / hip / head）を常時生成
+- 小節ごとに atom（bounce / sway / stepTouch / armWave / point / spin / pose / headNod）を重ねる
+- style（cute / cool / hype / chill）と energy 0..1 で振幅と選曲を変える
 - 歩行はルート移動＋Walkingクリップ
-- BPMに合わせて `AnimationAction.timeScale` を変更
-- クリップはatom/フォールバックとして残す
+- BPMに合わせて `AnimationAction.timeScale` を変更。ダンスの拍位相は `DanceAudio.getPhase()` から取る
+- GLTFLoader の sanitize 名（`UpperArm.L` → `UpperArmL`）を `BONE_ALIASES` で吸収
 
 ### Phase 4: LLM Director（実装済み）
 
 - Gemini Liveのツールから `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` を実行
+- `dance` ツールで style / moves / energy / BPM を指定する
 - MCの判断と発話を同じターンで行う
-- 画面上にMCの発話と現在のモード・曲・BPMを表示
+- 画面上にMCの発話と現在のモード・曲・BPM・style・energyを表示
 - 検証・キュー・nextBarの厳密な量化はまだ簡易
 
 ### Phase 5: 10%生成special

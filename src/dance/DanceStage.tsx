@@ -9,6 +9,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import type { FunctionCall } from "@google/genai";
 import { useGeminiLive } from "../hooks/useGeminiLive";
 import { DanceAudio } from "./audio";
+import {
+  defaultMoves,
+  isDanceMove,
+  isDanceStyle,
+  mergeDanceCue,
+  sampleDance,
+  type DanceBone,
+  type DanceCue,
+  type DanceMove,
+  type DancePose,
+  type DanceStyle,
+} from "./dance";
 import { DJ_SYSTEM_PROMPT, DJ_TOOLS, buildMcPrompt } from "./mc";
 import {
   MARKS,
@@ -25,6 +37,24 @@ import "./dance.css";
 const PLATFORM_TOP = 0.14;
 const BASE_BPM = TRACKS.neon.bpm;
 
+// GLTFLoader はノード名を sanitize する（UpperArm.L -> UpperArmL、重複 -> _1）。
+// ダンス側は読みやすい名前のまま、実ボーンへの対応だけここで持つ。
+const BONE_ALIASES: Record<string, DanceBone> = {
+  Hips: "Hips",
+  Abdomen: "Abdomen",
+  Torso: "Torso",
+  Neck: "Neck",
+  Head: "Head",
+  UpperArmL: "UpperArm.L",
+  LowerArmL: "LowerArm.L",
+  UpperArmR: "UpperArm.R",
+  LowerArmR: "LowerArm.R",
+  UpperLegL: "UpperLeg.L",
+  LowerLegL: "LowerLeg.L",
+  UpperLegR: "UpperLeg.R",
+  LowerLegR: "LowerLeg.R",
+};
+
 type StageApi = {
   start: () => void;
   setClip: (clip: string, bpm: number) => void;
@@ -34,7 +64,7 @@ type StageApi = {
   playTrack: (trackId: TrackId) => void;
   walkTo: (mark: MarkId) => void;
   talk: () => void;
-  dance: (bpm?: number, energy?: number) => void;
+  dance: (input: { bpm?: number; energy?: number; style?: DanceStyle; moves?: DanceMove[] }) => void;
   gesture: (intent: string) => void;
   getState: () => ShowState;
 };
@@ -77,6 +107,13 @@ function parseRequest(text: string, currentBpm: number): Request {
   return { clip: "Dance", label: "DANCE", bpm };
 }
 
+function parseDanceStyle(text: string): DanceStyle {
+  if (/かわい|キュート|cute/i.test(text)) return "cute";
+  if (/かっこ|クール|cool/i.test(text)) return "cool";
+  if (/ゆっくり|静か|スロー|chill|lo-?fi/i.test(text)) return "chill";
+  return "hype";
+}
+
 const GESTURES = ["wave", "nod", "point", "celebrate"] as const;
 type GestureIntent = (typeof GESTURES)[number];
 
@@ -111,6 +148,8 @@ export function DanceStage() {
     playing: false,
     bar: 0,
     beat: 0,
+    style: "hype",
+    energy: 0.7,
   });
   const showRef = useRef(show);
   showRef.current = show;
@@ -125,10 +164,22 @@ export function DanceStage() {
     if (!api) return;
     switch (action.type) {
       case "dance":
-        api.dance(action.bpm, action.energy);
+        api.dance({
+          bpm: action.bpm,
+          energy: action.energy,
+          style: action.style,
+          moves: action.moves,
+        });
         api.setDucked(false);
         setClipLabel("DANCE");
-        setShow((s) => ({ ...s, mode: "dance", playing: true, bpm: action.bpm ?? s.bpm }));
+        setShow((s) => ({
+          ...s,
+          mode: "dance",
+          playing: true,
+          bpm: action.bpm ?? s.bpm,
+          style: action.style ?? s.style,
+          energy: action.energy ?? s.energy,
+        }));
         break;
       case "stopMusic":
         api.stopMusic(action.fadeBars);
@@ -172,13 +223,19 @@ export function DanceStage() {
     async (call: FunctionCall) => {
       const args = call.args ?? {};
       switch (call.name) {
-        case "dance":
+        case "dance": {
+          const moves = Array.isArray(args.moves)
+            ? args.moves.filter(isDanceMove).slice(0, 8)
+            : undefined;
           applyAction({
             type: "dance",
             bpm: typeof args.bpm === "number" ? args.bpm : undefined,
             energy: typeof args.energy === "number" ? args.energy : undefined,
+            style: isDanceStyle(args.style) ? args.style : undefined,
+            moves,
           });
           break;
+        }
         case "stop_music":
           applyAction({
             type: "stopMusic",
@@ -256,7 +313,9 @@ export function DanceStage() {
           prev.playing === state.playing &&
           prev.bar === state.bar &&
           prev.beat === state.beat &&
-          prev.bpm === state.bpm;
+          prev.bpm === state.bpm &&
+          prev.style === state.style &&
+          prev.energy === state.energy;
         return same ? prev : { ...prev, ...state };
       });
       if (!state.playing) return;
@@ -480,17 +539,30 @@ export function DanceStage() {
     scene.add(robotRoot);
 
     let mixer: THREE.AnimationMixer | null = null;
-    let headBone: THREE.Object3D | null = null;
     const actions = new Map<string, THREE.AnimationAction>();
     let current: THREE.AnimationAction | null = null;
     let baseClip = "Idle";
     let desiredClip = "Idle";
     let mode: ShowMode = "idle";
-    let danceEnergy = 0.7;
+    let danceCue: DanceCue = { style: "hype", energy: 0.7, moves: [] };
     let walkTarget: THREE.Vector3 | null = null;
     let disposed = false;
     let startedAt = -1;
     let baseRadius = 4.6;
+    let stageX = 0;
+    let stageZ = 0;
+    let baseYaw = 0;
+    let dancePose: DancePose | null = null;
+    let smoothYaw = 0;
+    let smoothRootX = 0;
+    let smoothRootY = 0;
+    let smoothRootRoll = 0;
+    const rigBones = new Map<string, THREE.Bone>();
+    const restQuats = new Map<string, THREE.Quaternion>();
+    const animatedTracks = new Map<THREE.AnimationAction, Set<string>>();
+    const poseEuler = new THREE.Euler();
+    const poseQuat = new THREE.Quaternion();
+    const baseQuat = new THREE.Quaternion();
 
     const setMode = (next: ShowMode) => {
       if (mode === next) return;
@@ -504,7 +576,9 @@ export function DanceStage() {
       const next = actions.get(name) ?? actions.get("Idle");
       if (!next) return;
       if (next === current) {
-        next.reset().play();
+        // 同じループクリップを dance ツールのたびに頭へ戻さない。one-shot だけ再生し直す。
+        if (oneShot.has(name)) next.reset().play();
+        else next.play();
         return;
       }
       next.reset();
@@ -525,13 +599,65 @@ export function DanceStage() {
       base.timeScale = Math.max(0.65, Math.min(1.5, audio.bpm / BASE_BPM));
     };
 
+    const trackBones = (action: THREE.AnimationAction) => {
+      let set = animatedTracks.get(action);
+      if (!set) {
+        set = new Set<string>();
+        for (const track of action.getClip().tracks) {
+          const dot = track.name.lastIndexOf(".");
+          set.add(dot > 0 ? track.name.slice(0, dot) : track.name);
+        }
+        animatedTracks.set(action, set);
+      }
+      return set;
+    };
+
+    // mixer.update() の後ろにローカル回転を足す。アニメーションが書かない骨は
+    // rest を基準にするので、フレームをまたいで回転が累積しない。
+    const applyRigPose = (pose: DancePose | null) => {
+      const animated = new Set<string>();
+      for (const action of actions.values()) {
+        if (!action.isRunning()) continue;
+        for (const name of trackBones(action)) animated.add(name);
+      }
+      for (const [name, bone] of rigBones) {
+        if (animated.has(bone.name)) baseQuat.copy(bone.quaternion);
+        else {
+          const rest = restQuats.get(name);
+          if (!rest) continue;
+          baseQuat.copy(rest);
+        }
+        const offset = pose?.bones[name as DanceBone];
+        if (offset && (offset[0] !== 0 || offset[1] !== 0 || offset[2] !== 0)) {
+          poseEuler.set(offset[0], offset[1], offset[2]);
+          poseQuat.setFromEuler(poseEuler);
+          bone.quaternion.copy(baseQuat).multiply(poseQuat);
+        } else {
+          bone.quaternion.copy(baseQuat);
+        }
+      }
+    };
+
+    const smooth = (value: number, target: number, dt: number, rate = 14) =>
+      value + (target - value) * (1 - Math.exp(-rate * dt));
+    const smoothAngle = (value: number, target: number, dt: number, rate = 10) => {
+      const delta = Math.atan2(Math.sin(target - value), Math.cos(target - value));
+      return value + delta * (1 - Math.exp(-rate * dt));
+    };
+
     // RobotExpressive.glb: Tomás Laulhé / Don McCurdy, CC0 1.0 (Three.js examples)
     const loader = new GLTFLoader();
     loader.load("/models/RobotExpressive.glb", (gltf) => {
       if (disposed) return;
       const model = gltf.scene;
       model.traverse((obj) => {
-        if (obj instanceof THREE.Bone && obj.name === "Head") headBone = obj;
+        if (obj instanceof THREE.Bone) {
+          const semantic = BONE_ALIASES[obj.name.replace(/_\d+$/, "")];
+          if (semantic && !rigBones.has(semantic)) {
+            rigBones.set(semantic, obj);
+            restQuats.set(semantic, obj.quaternion.clone());
+          }
+        }
         if (obj instanceof THREE.Mesh) {
           obj.castShadow = true;
           obj.receiveShadow = true;
@@ -601,7 +727,7 @@ export function DanceStage() {
     apiRef.current = {
       start: () => {
         void audio.start("neon").catch(() => {});
-        danceEnergy = 0.8;
+        danceCue = { ...danceCue, energy: 0.8 };
         baseClip = "Dance";
         desiredClip = "Dance";
         fadeTo("Dance");
@@ -646,12 +772,14 @@ export function DanceStage() {
         fadeTo("Idle");
         setMode("talk");
       },
-      dance: (bpm, energy) => {
+      dance: (input) => {
         walkTarget = null;
-        if (typeof bpm === "number") audio.setBpm(bpm);
-        if (typeof energy === "number" && Number.isFinite(energy)) {
-          danceEnergy = Math.max(0.2, Math.min(1, energy));
-        }
+        if (typeof input.bpm === "number") audio.setBpm(input.bpm);
+        danceCue = mergeDanceCue(danceCue, {
+          style: input.style,
+          energy: input.energy,
+          moves: input.moves,
+        });
         if (!audio.playing) void audio.start().catch(() => {});
         audio.setDucked(false);
         baseClip = "Dance";
@@ -677,6 +805,8 @@ export function DanceStage() {
           playing: audio.playing,
           bar: phase.bar,
           beat: phase.beat,
+          style: danceCue.style,
+          energy: danceCue.energy,
         };
       },
     };
@@ -700,8 +830,6 @@ export function DanceStage() {
     const startedMs = performance.now();
     let lastMs = startedMs;
     let raf = 0;
-    const tmpEuler = new THREE.Euler();
-    const tmpQuat = new THREE.Quaternion();
     const animate = (nowMs: number) => {
       raf = requestAnimationFrame(animate);
       const dt = Math.min((nowMs - lastMs) / 1000, 0.05);
@@ -710,8 +838,8 @@ export function DanceStage() {
 
       // 歩行はルート移動、ダンスは拍に合わせた手続き層をクリップに重ねる。
       if (walkTarget) {
-        const dx = walkTarget.x - robotRoot.position.x;
-        const dz = walkTarget.z - robotRoot.position.z;
+        const dx = walkTarget.x - stageX;
+        const dz = walkTarget.z - stageZ;
         const dist = Math.hypot(dx, dz);
         if (dist < 0.06) {
           walkTarget = null;
@@ -723,21 +851,12 @@ export function DanceStage() {
           setMode(nextMode);
         } else {
           const step = Math.min(dist, 0.9 * dt);
-          robotRoot.position.x += (dx / dist) * step;
-          robotRoot.position.z += (dz / dist) * step;
-          const targetYaw = Math.atan2(dx, dz);
-          const delta = Math.atan2(
-            Math.sin(targetYaw - robotRoot.rotation.y),
-            Math.cos(targetYaw - robotRoot.rotation.y),
-          );
-          robotRoot.rotation.y += delta * Math.min(1, dt * 8);
+          stageX += (dx / dist) * step;
+          stageZ += (dz / dist) * step;
+          baseYaw = smoothAngle(baseYaw, Math.atan2(dx, dz), dt, 8);
         }
       } else {
-        const delta = Math.atan2(
-          Math.sin(-robotRoot.rotation.y),
-          Math.cos(-robotRoot.rotation.y),
-        );
-        robotRoot.rotation.y += delta * Math.min(1, dt * 3);
+        baseYaw = smoothAngle(baseYaw, 0, dt, 3);
       }
 
       mixer?.update(dt);
@@ -745,26 +864,22 @@ export function DanceStage() {
       const phase = audio.getPhase();
       const dancing = mode === "dance" && phase.playing && !reduceMotion;
       const walking = mode === "walk" && !reduceMotion;
-      if (headBone) {
-        const nod = dancing
-          ? Math.sin(phase.phase * Math.PI * 2) * (0.035 + danceEnergy * 0.04)
-          : Math.sin(t * 1.4) * 0.012;
-        const tilt = dancing ? Math.sin(phase.phase * Math.PI) * (0.012 + danceEnergy * 0.02) : 0;
-        tmpEuler.set(nod, 0, tilt);
-        tmpQuat.setFromEuler(tmpEuler);
-        headBone.quaternion.multiply(tmpQuat);
-      }
-      const bob = dancing
-        ? Math.abs(Math.sin(phase.phase * Math.PI)) * (0.018 + danceEnergy * 0.035)
-        : walking
-          ? 0.012
-          : 0;
+      dancePose = dancing ? sampleDance(phase, danceCue) : null;
+      applyRigPose(dancePose);
+      smoothRootX = smooth(smoothRootX, dancePose?.rootX ?? 0, dt);
+      smoothRootY = smooth(smoothRootY, dancePose?.rootY ?? 0, dt);
+      smoothRootRoll = smooth(smoothRootRoll, dancePose?.rootRoll ?? 0, dt);
+      smoothYaw = smoothAngle(smoothYaw, dancePose?.rootYaw ?? 0, dt);
+
+      const bob = dancing ? smoothRootY : walking ? 0.012 : 0;
+      robotRoot.position.x = stageX + smoothRootX;
       robotRoot.position.y = PLATFORM_TOP + bob;
-      robotRoot.rotation.z = dancing
-        ? Math.sin(phase.phase * Math.PI * 2) * (0.01 + danceEnergy * 0.022)
-        : 0;
+      robotRoot.position.z = stageZ;
+      robotRoot.rotation.y = baseYaw + smoothYaw;
+      robotRoot.rotation.z = smoothRootRoll;
       contactShadow.position.x = robotRoot.position.x;
       contactShadow.position.z = robotRoot.position.z;
+      if (dancePose) pulse = Math.max(pulse, dancePose.accent);
 
       pulse *= Math.exp(-dt * 6);
       spotA.intensity = 100 + pulse * 70;
@@ -857,12 +972,21 @@ export function DanceStage() {
       return;
     }
     if (/再開|play|踊|dance|アゲ|上げ/i.test(text)) {
+      const style = parseDanceStyle(text);
       const energy = /元気|アゲ|上げ|激|party|fast|up/i.test(text)
         ? 0.95
         : /ゆっくり|静か|スロー|slow|chill/i.test(text)
           ? 0.35
-          : 0.7;
-      applyAction({ type: "dance", bpm: parseBpm(text, showRef.current.bpm), energy });
+          : style === "hype"
+            ? 0.8
+            : 0.65;
+      applyAction({
+        type: "dance",
+        bpm: parseBpm(text, showRef.current.bpm),
+        energy,
+        style,
+        moves: defaultMoves(style),
+      });
       return;
     }
 
@@ -923,7 +1047,7 @@ export function DanceStage() {
         <span className="dj-readout-label">NOW / {clipLabel}</span>
         <strong className="dj-readout-clip">{show.mode.toUpperCase()}</strong>
         <span className="dj-readout-bpm">
-          {show.trackName} · {show.bpm} BPM
+          {show.trackName} · {show.bpm} BPM · {show.style.toUpperCase()} {Math.round(show.energy * 100)}
         </span>
       </aside>
 

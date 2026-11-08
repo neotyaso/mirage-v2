@@ -25,7 +25,7 @@
 | DJ-0 | 本線切替・レセプション退役・ドキュメント再編 | 完了 | — | `/` が DJ。旧要件を `docs/legacy/` に保管。受付 UI を削除 |
 | DJ-1 | ショー状態機械（ShowAction / ShowState） | 完了 | — | dance / stop / play / walk / talk / gesture が動く |
 | DJ-2 | MusicTransport（2曲・BPM・停止・ダッキング・拍位相） | 完了 | — | 曲停止・変更で身体が止まらない |
-| DJ-3 | 身体（クリップ＋プロシージャル＋歩行） | 完了 | DJ-1, DJ-2 | 拍同期の bounce / sway / head nod。マークへ歩く |
+| DJ-3 | 身体（ダンス核＋クリップ＋歩行） | 完了 | DJ-1, DJ-2 | 拍同期の base groove＋小節ごとの atom。style / moves / energy。マークへ歩く |
 | DJ-4 | Gemini Live MC / Director | 完了 | DJ-1, DJ-2, DJ-3 | 8小節ごとに判断し、ツールで舞台を操作する |
 | DJ-5 | ステージ UI（MC パネル・状態・操作・ミュート） | 完了 | DJ-1〜4 | デスクトップ／モバイルで操作できる |
 | DJ-6 | MotionSource 抽象化＋生成 special | 未着手 | DJ-3 | クリップ／プロシージャル／生成を差し替え可能。失敗時は atom に落ちる |
@@ -40,7 +40,8 @@
 - `ShowAction` と `ShowState`、2曲（NEON DRIVE 112 BPM / PULSE 128 BPM）。
 - 停止フェード、発話ダッキング、拍位相、BPM の `timeScale` 補正。
 - `center / left / right / front` への歩行と到着後の Idle / Dance 復帰。
-- 拍同期のプロシージャル身体。`dance` の energy で振幅を変更。
+- ダンス核 `src/dance/dance.ts`。拍同期の base groove＋小節ごとの atom、4 style（cute / cool / hype / chill）、8 moves。LLM の `dance` ツールから style / moves / energy を指定。
+- ダンス核の純関数テスト `scripts/test-dance.mjs` を追加し、`pnpm test` で実行。
 - Gemini Live の DJ 人格、出力専用セッション、8小節ごとの MC チャンス、6ツール。
 - MC パネル、モード／曲／BPM／小節、クイック操作、MC・音楽ミュート、モバイル対応。
 - Studio の Live 短命トークン。Studio 停止時は MC OFFLINE でステージ続行。
@@ -49,10 +50,10 @@
 ## 着手順
 
 ```
-[今]  DJ-9 テストの土台（公演状態機械・BPM・キュー）
-        └ 先に純関数を切り出し、次の変更を壊さないようにする
-[次]  DJ-8 nextBar 量子化＋本物の曲
+[今]  DJ-8 nextBar 量子化＋本物の曲
         └ 曲変更・停止・ダンス開始を小節頭に合わせる
+[次]  DJ-9 残り（公演状態機械・BPM・キューの純関数テスト、CI）
+        └ ダンス核は test-dance.mjs で固定済み
 [次]  DJ-7 観客入力
         └ 人数・表情を Director に渡し、MC と energy を変える
 [次]  DJ-6 MotionSource＋生成 special

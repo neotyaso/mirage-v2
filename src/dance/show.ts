@@ -1,3 +1,5 @@
+import type { DanceMove, DanceStyle } from "./dance";
+
 export type ShowMode = "idle" | "walk" | "talk" | "dance";
 export type TrackId = "neon" | "pulse";
 export type MarkId = "center" | "left" | "right" | "front";
@@ -35,10 +37,18 @@ export type ShowState = {
   playing: boolean;
   bar: number;
   beat: number;
+  style: DanceStyle;
+  energy: number;
 };
 
 export type ShowAction =
-  | { type: "dance"; bpm?: number; energy?: number }
+  | {
+      type: "dance";
+      bpm?: number;
+      energy?: number;
+      style?: DanceStyle;
+      moves?: DanceMove[];
+    }
   | { type: "stopMusic"; fadeBars?: number }
   | { type: "playTrack"; trackId: TrackId }
   | { type: "walkTo"; mark: MarkId }

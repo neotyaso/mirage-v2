@@ -47,7 +47,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | 3D ステージ | Three.js、ロボット、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
 | 公演状態 | `ShowAction` / `ShowState`、2曲、ステージマーク | `src/dance/show.ts` |
 | 音楽 | Web Audio シンセ2曲、停止フェード、ダッキング、拍位相、BPM | `src/dance/audio.ts` |
-| 身体 | クリップ再生＋拍同期の bounce / sway / head nod。BPM で `timeScale` を補正 | `src/dance/DanceStage.tsx` |
+| 身体 | クリップ再生＋拍同期の base groove＋小節ごとの atom。style / moves / energy を Director から指定 | `src/dance/dance.ts` / `src/dance/DanceStage.tsx` |
 | 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `src/dance/DanceStage.tsx` |
 | MC / Director | Gemini Live の出力専用セッション、DJ 人格、8小節ごとの判断、ツール実行 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
 | 観客入力 | 未接続。カメラ・表情・トラッキングの資産は残している | `src/hooks/useFaceDetection.ts` / `src/vision/expression.ts` / `src/tracking/` |
@@ -88,13 +88,14 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | Face | 表情・視線・リップシンク | なし |
 
 - モーションは **90%: atom＋procedural**、**10%: 生成 special** を目標にする。
-- procedural は拍同期の bounce / sway / head nod を常時生成する。
-- atom は 0.5〜2 秒の短い部品。完成振付ではない。
+- procedural は拍同期の bounce / sway / hip / head を常時生成する。
+- atom は小節ごとに切り替わる短い部品（bounce / sway / stepTouch / armWave / point / spin / pose / headNod）。完成振付ではない。
+- `dance` の style（cute / cool / hype / chill）、moves、energy 0..1 を身体へ反映する。
+- ダンス姿勢の計算は `src/dance/dance.ts` の純関数に置き、Three.js と分離する。
 - クリップは `AnimationAction.timeScale = bpm / 112` で曲に合わせる。
-- `dance` の energy 0..1 を身体の振幅に反映する。
 - 歩行はダンスの atom で済ませない。音楽が止まった後も自然に動けるよう Locomotion を独立させる。
 - 生成モデルは `MotionSource` の裏に隠し、後から差し替え可能にする。
-- **既知の制限**: 歩行は直線移動＋到着後の向き直しのみ。足滑り補正・障害物回避は未実装。
+- **既知の制限**: 歩行は直線移動＋到着後の向き直しのみ。ダンスは手続き的な stylized motion で、足の接地・足滑り補正・障害物回避は未実装。
 
 ### 3-4. MC / Voice
 
@@ -166,7 +167,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - 公演状態機械、BPM 同期、キュー量子化、Director の出力変換は純関数に分け、ブラウザ無しでテストする。
 - 外部 API（Gemini / Studio）をモックした統合テストを入れる。
 - 実機カメラ・マイクがなくてもビルドと主要ロジックを検証できるようにする。
-- 現状は `scripts/test-tracking.mjs` のみ。DJ のテストは `DJ-9` で追加する。
+- 現状は `scripts/test-tracking.mjs` と `scripts/test-dance.mjs`。`pnpm test` で両方実行する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する。
 
 ### 4.4 計測
 
@@ -178,7 +179,8 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 | ファイル | 内容 |
 | --- | --- |
-| `src/dance/DanceStage.tsx` | Three.js シーン、公演状態、歩行、プロシージャル身体、UI、MC 接続 |
+| `src/dance/DanceStage.tsx` | Three.js シーン、公演状態、歩行、ボーン適用、UI、MC 接続 |
+| `src/dance/dance.ts` | ダンス核。拍・小節・style・moves から姿勢を返す純関数 |
 | `src/dance/show.ts` | `ShowAction` / `ShowState`、曲、ステージマーク |
 | `src/dance/audio.ts` | シンセ2曲、停止フェード、ダッキング、拍位相、BPM |
 | `src/dance/mc.ts` | DJ プロンプト、Gemini Live ツール、MC プロンプト |
@@ -197,7 +199,8 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - [x] `/` で AI DJ ステージが起動する。
 - [x] `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` が動く。
 - [x] ダンス → 停止 → トーク → 歩行 → 次の曲 → ダンス の1巡が通る。
-- [x] BPM 同期の bounce / sway / head nod が動く。
+- [x] BPM 同期の base groove と、小節ごとの atom が動く。
+- [x] LLM の `dance` ツールが style / moves / energy を指定し、身体に反映される。
 - [x] Gemini Live の MC が話し、ツールで舞台を操作する。
 - [x] Studio が落ちてもステージ操作は動く。
 - [x] `pnpm build`（`tsc --noEmit && vite build`）が通る。
@@ -227,8 +230,9 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### DJ-9 品質・テスト
 
+- [x] ダンス核（拍・小節・style・atom）の純関数テストを追加し、`pnpm test` で実行する。
 - [ ] 公演状態機械・BPM 同期・キュー量子化の純関数テストを追加する。
-- [ ] `pnpm test` と CI を整備する。
+- [ ] CI を整備する。
 - [ ] 30分連続稼働、曲停止・変更の成功率、MC の発話回数を計測する。
 - [ ] 実機スピーカー／マイクで回り込みを確認する。
 

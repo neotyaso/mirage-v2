@@ -13,7 +13,7 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 - BPM 同期、停止フェード、発話ダッキング、拍位相
 - Gemini Live の DJ 人格 MC（出力専用。マイクは開かない）
 - LLM のツールから `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` を実行
-- 拍同期のプロシージャル身体（bounce / sway / head nod）＋クリップ
+- 拍同期のダンス核（base groove＋小節ごとの atom、4 style / 8 moves）＋クリップ
 - MC パネル、モード／曲／BPM／小節、クイック操作、MC・音楽ミュート、モバイル対応
 
 **公演の1巡**: ダンス → 音楽停止 → トーク → 歩行 → 次の曲 → ダンス。
@@ -65,7 +65,7 @@ LLM に毎フレームの関節を出させない。身体は前の cue を続�
 
 ### モーションの 90 / 10
 
-- **90%**: atom（0.5〜2秒の動きの部品）＋ procedural（拍同期の bounce / sway / head nod）。
+- **90%**: atom（小節ごとの短い動きの部品）＋ procedural（拍同期の bounce / sway / hip / head）。style は `cute / cool / hype / chill`、moves は `bounce / sway / stepTouch / armWave / point / spin / pose / headNod`。
 - **10%**: 生成モデルによる special。サビ・ドロップなど限定。2〜4秒先読みし、間に合わなければ atom に落とす。
 
 詳しい設計は [docs/ai-dj-architecture.md](docs/ai-dj-architecture.md)。
@@ -77,7 +77,7 @@ mirage-v2/
 ├── index.html                  # / の DJ ステージ
 ├── dance.html                  # 互換エイリアス
 ├── src/
-│   ├── dance/                  # DanceStage / show / audio / mc / UI
+│   ├── dance/                  # DanceStage / dance核 / show / audio / mc / UI
 │   ├── hooks/
 │   │   ├── useGeminiLive.ts    # Live 接続・カスタムプロンプト／ツール
 │   │   ├── useFaceDetection.ts # 観客入力の再利用資産
@@ -94,17 +94,17 @@ mirage-v2/
 ## テスト
 
 ```bash
-pnpm build                    # tsc --noEmit && vite build
-node scripts/test-tracking.mjs  # トラッキングの自己テスト
+pnpm build       # tsc --noEmit && vite build
+pnpm test        # トラッキング＋ダンス核の自己テスト
 ```
 
-DJ の公演状態機械・BPM 同期・キュー量子化のテストはまだ無い。`DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
+ダンス核のテストは `scripts/test-dance.mjs`。拍・小節・style・atom・energy をブラウザ無しで検証する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
 
 ## 展示前チェックリスト
 
 1. `pnpm build` が通る。
 2. `/` で 3D ステージが起動する。
-3. 「踊って」で音楽とダンスが始まる。
+3. 「踊って」で音楽とダンスが始まる。style / moves を変えると振付の方向が変わる。
 4. 「止めて」で音楽がフェードし、身体が Idle に戻る。
 5. 「歩いて」でマークへ移動し、到着後に Idle / Dance へ戻る。
 6. 「次の曲」で曲が切り替わる。

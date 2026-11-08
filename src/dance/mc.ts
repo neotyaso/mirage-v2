@@ -9,6 +9,8 @@ export const DJ_SYSTEM_PROMPT =
   "曲が鳴っている間は、8小節ごとにMCのチャンス。まだ早い・盛り上がり中・ドロップ中なら黙る。" +
   "言うことがなければ、ツールを呼ばず、音声も出さずにそのターンを終える。" +
   "曲を止める、曲を変える、歩く、踊る、手を振るなどの舞台操作は必ずツールで実行する。" +
+  "dance ツールでは style（cute / cool / hype / chill）と moves（bounce / sway / stepTouch / armWave / point / spin / pose / headNod）で振付の方向を指定する。" +
+  "moves は1〜4個。8小節ごとに、曲の雰囲気に合わせて新しい組み合わせを選んでよい。" +
   "「みんな盛り上がってるかい？」のような定番は使ってよいが、毎回同じ言い回しにしない。" +
   "観客を煽る、曲を紹介する、動きを説明する、次の展開を予告する、のどれかを短く。" +
   "日本語以外では話さない。";
@@ -16,13 +18,19 @@ export const DJ_SYSTEM_PROMPT =
 export const DJ_TOOLS: FunctionDeclaration[] = [
   {
     name: "dance",
-    description: "踊りを開始/継続する。曲が止まっていれば再生もする。",
+    description: "踊りを開始/継続する。style と moves で振付の方向を指定する。",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        style: { type: Type.STRING, description: "cute / cool / hype など短い雰囲気" },
+        style: { type: Type.STRING, description: "cute / cool / hype / chill" },
         energy: { type: Type.NUMBER, description: "0.0〜1.0。大きいほど激しく" },
         bpm: { type: Type.NUMBER, description: "任意。曲のBPMを変える" },
+        moves: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description:
+            "1小節ごとの動き。bounce / sway / stepTouch / armWave / point / spin / pose / headNod から1〜4個。",
+        },
       },
     },
   },
@@ -85,6 +93,8 @@ export function buildMcPrompt(state: ShowState, force = false): string {
     playing: state.playing,
     bar: state.bar,
     beat: state.beat,
+    style: state.style,
+    energy: state.energy,
   };
   const ask = force
     ? "今すぐ、必ず2〜6秒の日本語で一言話して。話したら dance ツールで踊りに戻って。"
