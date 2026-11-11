@@ -42,10 +42,11 @@ writeFileSync(
   }).outputText,
 );
 const dance = await import(pathToFileURL(outFile).href);
-const { DANCE_MOVES, DANCE_STYLES, defaultMoves, isDanceMove, isDanceStyle, mergeDanceCue, sampleDance } = dance;
+const { DANCE_BONES, DANCE_MOVES, DANCE_STYLES, defaultMoves, isDanceMove, isDanceStyle, mergeDanceCue, sampleDance } = dance;
 
 assert(DANCE_STYLES.length === 4, "style は4種類");
 assert(DANCE_MOVES.length === 8, "move は8種類");
+assert(DANCE_BONES.includes("Shoulder.L") && DANCE_BONES.includes("Shoulder.R"), "肩ボーンを使う");
 assert(isDanceStyle("hype") && !isDanceStyle("edm"), "style の検証");
 assert(isDanceMove("stepTouch") && !isDanceMove("moonwalk"), "move の検証");
 assert(defaultMoves("hype").includes("armWave"), "style ごとの既定 move がある");
@@ -67,6 +68,13 @@ assert(Number.isFinite(loud.rootY) && Number.isFinite(loud.rootX), "root は有�
 const cute = sampleDance(clock, { style: "cute", energy: 1, moves: ["sway"] });
 const cool = sampleDance(clock, { style: "cool", energy: 1, moves: ["sway"] });
 assert(Math.abs(cute.bones.Hips[1]) > Math.abs(cool.bones.Hips[1]), "cute は cool より腰の振りが大きい");
+
+const wave = sampleDance(
+  { phase: 0.125, beat: 0, bar: 1, playing: true },
+  { style: "hype", energy: 1, moves: ["armWave"] },
+);
+assert(wave.bones["UpperArm.L"][0] > 0, "armWave で左腕が外側に上がる");
+assert(wave.bones["UpperArm.R"][0] < 0, "armWave で右腕が外側に上がる");
 
 const spinClock = { phase: 0, beat: 2, bar: 0, playing: true };
 const spin = sampleDance(spinClock, { style: "hype", energy: 1, moves: ["spin"] });

@@ -10,7 +10,6 @@ import type { FunctionCall } from "@google/genai";
 import { useGeminiLive } from "../hooks/useGeminiLive";
 import { DanceAudio } from "./audio";
 import {
-  defaultMoves,
   isDanceMove,
   isDanceStyle,
   mergeDanceCue,
@@ -45,6 +44,8 @@ const BONE_ALIASES: Record<string, DanceBone> = {
   Torso: "Torso",
   Neck: "Neck",
   Head: "Head",
+  ShoulderL: "Shoulder.L",
+  ShoulderR: "Shoulder.R",
   UpperArmL: "UpperArm.L",
   LowerArmL: "LowerArm.L",
   UpperArmR: "UpperArm.R",
@@ -69,51 +70,6 @@ type StageApi = {
   getState: () => ShowState;
 };
 
-type Request = { clip: string; label: string; bpm: number };
-
-const CLIPS: Array<[RegExp, string, string]> = [
-  [/手を振|バイバイ|wave/i, "Wave", "WAVE"],
-  [/ジャンプ|跳|jump/i, "Jump", "JUMP"],
-  [/決め|キメ|ポーズ|かっこ|thumbs/i, "ThumbsUp", "POSE"],
-  [/歩|walk/i, "Walking", "WALK"],
-  [/走|run/i, "Running", "RUN"],
-  [/うなず|yes/i, "Yes", "NOD"],
-  [/パンチ|punch/i, "Punch", "PUNCH"],
-  [/座|sit/i, "Sitting", "SIT"],
-  [/立て|stand/i, "Standing", "STAND"],
-  [/踊|dance/i, "Dance", "DANCE"],
-];
-
-const QUICK: Array<{ label: string; prompt: string }> = [
-  { label: "踊って", prompt: "元気に踊って" },
-  { label: "止めて", prompt: "音楽を止めて" },
-  { label: "歩いて", prompt: "歩いて" },
-  { label: "話して", prompt: "話して" },
-  { label: "次の曲", prompt: "次の曲" },
-  { label: "手を振って", prompt: "手を振って" },
-];
-
-function parseBpm(text: string, currentBpm: number): number {
-  if (/ゆっくり|静か|スロー|slow|chill/i.test(text)) return 88;
-  if (/元気|アゲ|上げ|速|激|party|fast|up/i.test(text)) return 132;
-  if (/かわい|キュート|cute/i.test(text)) return 120;
-  return currentBpm;
-}
-
-function parseRequest(text: string, currentBpm: number): Request {
-  const bpm = parseBpm(text, currentBpm);
-  const hit = CLIPS.find(([pattern]) => pattern.test(text));
-  if (hit) return { clip: hit[1], label: hit[2], bpm };
-  return { clip: "Dance", label: "DANCE", bpm };
-}
-
-function parseDanceStyle(text: string): DanceStyle {
-  if (/かわい|キュート|cute/i.test(text)) return "cute";
-  if (/かっこ|クール|cool/i.test(text)) return "cool";
-  if (/ゆっくり|静か|スロー|chill|lo-?fi/i.test(text)) return "chill";
-  return "hype";
-}
-
 const GESTURES = ["wave", "nod", "point", "celebrate"] as const;
 type GestureIntent = (typeof GESTURES)[number];
 
@@ -136,7 +92,6 @@ export function DanceStage() {
   const startedRef = useRef(false);
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [prompt, setPrompt] = useState("");
   const [clipLabel, setClipLabel] = useState("IDLE");
   const [mcLine, setMcLine] = useState("");
   const [mcError, setMcError] = useState<string | null>(null);
@@ -341,8 +296,8 @@ export function DanceStage() {
     if (!host) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x04050a);
-    scene.fog = new THREE.FogExp2(0x04050a, 0.04);
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.FogExp2(0x000000, 0.055);
 
     const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 80);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -358,28 +313,28 @@ export function DanceStage() {
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environmentIntensity = 0.18;
 
-    // 床とグリッド
+    // 黒い空間に奥行きを作る。床は大きく、グリッドはフォグで消える。
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(7, 64),
-      new THREE.MeshStandardMaterial({ color: 0x070911, metalness: 0.9, roughness: 0.32 }),
+      new THREE.CircleGeometry(24, 96),
+      new THREE.MeshStandardMaterial({ color: 0x020305, metalness: 0.75, roughness: 0.42 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    const grid = new THREE.GridHelper(24, 48, 0x1a3350, 0x0c1728);
+    const grid = new THREE.GridHelper(40, 80, 0x102a44, 0x07111d);
     grid.position.y = 0.002;
     const gridMat = grid.material as THREE.Material;
     gridMat.transparent = true;
-    gridMat.opacity = 0.45;
+    gridMat.opacity = 0.32;
     scene.add(grid);
 
     const platformMat = new THREE.MeshStandardMaterial({
-      color: 0x0b1020,
-      metalness: 0.8,
-      roughness: 0.26,
-      emissive: new THREE.Color(0x0a2740),
-      emissiveIntensity: 0.35,
+      color: 0x05070d,
+      metalness: 0.7,
+      roughness: 0.34,
+      emissive: new THREE.Color(0x071724),
+      emissiveIntensity: 0.25,
     });
     const platform = new THREE.Mesh(new THREE.CylinderGeometry(2.05, 2.25, PLATFORM_TOP, 64), platformMat);
     platform.position.y = PLATFORM_TOP / 2;
@@ -400,55 +355,6 @@ export function DanceStage() {
     innerRing.rotation.x = -Math.PI / 2;
     innerRing.position.y = PLATFORM_TOP + 0.004;
     scene.add(innerRing);
-
-    // 奥のLEDスクリーン
-    const screenCanvas = document.createElement("canvas");
-    screenCanvas.width = 1024;
-    screenCanvas.height = 512;
-    const g = screenCanvas.getContext("2d")!;
-    g.fillStyle = "#040711";
-    g.fillRect(0, 0, 1024, 512);
-    g.strokeStyle = "rgba(94,231,255,0.10)";
-    g.lineWidth = 1;
-    for (let x = 0; x <= 1024; x += 64) {
-      g.beginPath();
-      g.moveTo(x, 0);
-      g.lineTo(x, 512);
-      g.stroke();
-    }
-    for (let y = 0; y <= 512; y += 64) {
-      g.beginPath();
-      g.moveTo(0, y);
-      g.lineTo(1024, y);
-      g.stroke();
-    }
-    g.textAlign = "center";
-    g.fillStyle = "#5ee7ff";
-    g.font = "700 150px Helvetica, Arial, sans-serif";
-    g.fillText("MIRAGE", 512, 245);
-    g.fillStyle = "#ff5fb2";
-    g.font = "500 34px monospace";
-    g.fillText("A I   D J   /   3 D   S T A G E", 512, 320);
-    const screenTexture = new THREE.CanvasTexture(screenCanvas);
-    screenTexture.colorSpace = THREE.SRGBColorSpace;
-    const screen = new THREE.Mesh(
-      new THREE.PlaneGeometry(5.8, 2.9),
-      new THREE.MeshBasicMaterial({ map: screenTexture, toneMapped: false, transparent: true, opacity: 0.85 }),
-    );
-    screen.position.set(0, 2.2, -3.8);
-    scene.add(screen);
-
-    for (const [x, color] of [
-      [-3.4, 0xff5fb2],
-      [3.4, 0x5ee7ff],
-    ] as const) {
-      const bar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.035, 3.4, 0.035),
-        new THREE.MeshBasicMaterial({ color, toneMapped: false }),
-      );
-      bar.position.set(x, 1.7, -2.2);
-      scene.add(bar);
-    }
 
     // 空中の粒子
     const count = 240;
@@ -558,6 +464,12 @@ export function DanceStage() {
     let smoothRootY = 0;
     let smoothRootRoll = 0;
     const rigBones = new Map<string, THREE.Bone>();
+    const footBones: THREE.Bone[] = [];
+    let bodyBone: THREE.Bone | null = null;
+    const bodyRestPos = new THREE.Vector3();
+    let footGroundOffset = 0;
+    let footGround = 0;
+    const footWorld = new THREE.Vector3();
     const restQuats = new Map<string, THREE.Quaternion>();
     const animatedTracks = new Map<THREE.AnimationAction, Set<string>>();
     const poseEuler = new THREE.Euler();
@@ -636,6 +548,8 @@ export function DanceStage() {
           bone.quaternion.copy(baseQuat);
         }
       }
+      // Dance クリップの Body.position は足を置き去りにして浮くので、ダンス中は固定する。
+      if (pose && bodyBone) bodyBone.position.copy(bodyRestPos);
     };
 
     const smooth = (value: number, target: number, dt: number, rate = 14) =>
@@ -652,6 +566,11 @@ export function DanceStage() {
       const model = gltf.scene;
       model.traverse((obj) => {
         if (obj instanceof THREE.Bone) {
+          if (obj.name === "Body") {
+            bodyBone = obj;
+            bodyRestPos.copy(obj.position);
+          }
+          if (/^Foot\.?[LR]$/.test(obj.name)) footBones.push(obj);
           const semantic = BONE_ALIASES[obj.name.replace(/_\d+$/, "")];
           if (semantic && !rigBones.has(semantic)) {
             rigBones.set(semantic, obj);
@@ -697,9 +616,28 @@ export function DanceStage() {
       model.position.z -= center.z;
       model.position.y -= box.min.y;
       robotRoot.add(model);
+      robotRoot.updateMatrixWorld(true);
+      let restFootY = Infinity;
+      for (const foot of footBones) {
+        foot.getWorldPosition(footWorld);
+        restFootY = Math.min(restFootY, footWorld.y);
+      }
+      if (Number.isFinite(restFootY)) footGroundOffset = restFootY - PLATFORM_TOP;
 
       mixer = new THREE.AnimationMixer(model);
-      for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
+      for (const clip of gltf.animations) {
+        // Dance クリップの脚・体幹・首は足IKや手続き層と噛み合わず、
+        // 浮いて見えるので、腕と表情だけを使う。
+        if (clip.name === "Dance") {
+          clip.tracks = clip.tracks.filter(
+            (track) =>
+              !/^(UpperLeg|LowerLeg)[LR]\./.test(track.name) &&
+              track.name !== "Body.quaternion" &&
+              track.name !== "Head.quaternion",
+          );
+        }
+        actions.set(clip.name, mixer.clipAction(clip));
+      }
       mixer.addEventListener("finished", (event) => {
         if (event.action === current) {
           fadeTo(baseClip);
@@ -820,8 +758,6 @@ export function DanceStage() {
       camera.updateProjectionMatrix();
       const portrait = camera.aspect < 0.8;
       baseRadius = portrait ? 7.6 : camera.aspect < 1.2 ? 5.2 : 4.6;
-      // 縦画面では背景スクリーンがUIと衝突するので消す。
-      screen.visible = !portrait;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -877,6 +813,24 @@ export function DanceStage() {
       robotRoot.position.z = stageZ;
       robotRoot.rotation.y = baseYaw + smoothYaw;
       robotRoot.rotation.z = smoothRootRoll;
+
+      // 膝を曲げても足が浮かないように、一番低い足を床へ寄せる。
+      if ((dancing || walking) && footBones.length > 0) {
+        robotRoot.updateMatrixWorld(true);
+        let lowestFoot = Infinity;
+        for (const foot of footBones) {
+          foot.getWorldPosition(footWorld);
+          lowestFoot = Math.min(lowestFoot, footWorld.y);
+        }
+        if (Number.isFinite(lowestFoot)) {
+          const target = PLATFORM_TOP + footGroundOffset - lowestFoot;
+          footGround = smooth(footGround, target, dt, 24);
+          robotRoot.position.y += footGround;
+        }
+      } else {
+        footGround = 0;
+      }
+
       contactShadow.position.x = robotRoot.position.x;
       contactShadow.position.z = robotRoot.position.z;
       if (dancePose) pulse = Math.max(pulse, dancePose.accent);
@@ -932,76 +886,6 @@ export function DanceStage() {
     setClipLabel("DANCE");
     setShow((s) => ({ ...s, mode: "dance", playing: true }));
     apiRef.current?.start();
-    void gemini.connect().catch((e) => setMcError((e as Error).message));
-  };
-
-  const runRequest = (raw: string) => {
-    const text = raw.trim();
-    if (!text) return;
-    setPrompt("");
-    if (!startedRef.current) startSession();
-
-    if (/止め|停止|stop|音楽.*(消|止)/i.test(text)) {
-      applyAction({ type: "stopMusic", fadeBars: 1 });
-      return;
-    }
-    if (/歩|walk|移動/i.test(text)) {
-      const mark: MarkId = /左|left/i.test(text)
-        ? "left"
-        : /右|right/i.test(text)
-          ? "right"
-          : /前|front/i.test(text)
-            ? "front"
-            : showRef.current.mode === "walk"
-              ? "center"
-              : Math.random() > 0.5
-                ? "left"
-                : "right";
-      applyAction({ type: "walkTo", mark });
-      return;
-    }
-    if (/話|talk|mc|マイク/i.test(text)) {
-      applyAction({ type: "talk" });
-      if (gemini.state === "listening") {
-        askMc(buildMcPrompt({ ...showRef.current, mode: "talk" }, true));
-      }
-      return;
-    }
-    if (/次|next|曲.*(変|チェンジ)|選曲/i.test(text)) {
-      applyAction({ type: "playTrack", trackId: nextTrack(showRef.current.trackId) });
-      return;
-    }
-    if (/再開|play|踊|dance|アゲ|上げ/i.test(text)) {
-      const style = parseDanceStyle(text);
-      const energy = /元気|アゲ|上げ|激|party|fast|up/i.test(text)
-        ? 0.95
-        : /ゆっくり|静か|スロー|slow|chill/i.test(text)
-          ? 0.35
-          : style === "hype"
-            ? 0.8
-            : 0.65;
-      applyAction({
-        type: "dance",
-        bpm: parseBpm(text, showRef.current.bpm),
-        energy,
-        style,
-        moves: defaultMoves(style),
-      });
-      return;
-    }
-
-    const request = parseRequest(text, showRef.current.bpm);
-    apiRef.current?.setClip(request.clip, request.bpm);
-    setClipLabel(request.label);
-    setShow((s) => ({
-      ...s,
-      bpm: request.bpm,
-      ...(request.clip === "Dance"
-        ? { mode: "dance" as ShowMode, playing: true }
-        : request.clip === "Walking"
-          ? { mode: "walk" as ShowMode }
-          : {}),
-    }));
   };
 
   const toggleMute = () => {
@@ -1012,16 +896,14 @@ export function DanceStage() {
   };
 
   const mcText = cleanMc(mcLine);
-  const mcStatus =
+  const mcCaption =
     mcError ??
     (mcText ||
       (gemini.state === "connecting"
         ? "MIRAGE is tuning in…"
-        : gemini.state === "listening"
-          ? "…"
-          : gemini.state === "error"
-            ? "MC OFFLINE — stage only"
-            : "MIRAGE will speak here."));
+        : gemini.state === "error"
+          ? "MC OFFLINE — stage only"
+          : ""));
 
   return (
     <div className={`dj ${started ? "is-started" : ""}`}>
@@ -1030,7 +912,7 @@ export function DanceStage() {
       <header className="dj-top">
         <div className="dj-brand">
           <span className="dj-brand-mark">MIRAGE</span>
-          <span className="dj-brand-sub">AI DJ / 3D MOTION STAGE</span>
+          <span className="dj-brand-sub">REAL-TIME DANCE STAGE</span>
         </div>
         <div className="dj-top-right">
           <span className="dj-live">
@@ -1051,49 +933,22 @@ export function DanceStage() {
         </span>
       </aside>
 
-      <div className="dj-hint">LLM DIRECTOR → STAGE</div>
-
-      <footer className="dj-console">
-        <div className="dj-mc" aria-live="polite">
-          <span className="dj-mc-label">MC</span>
-          <p>{mcStatus}</p>
-        </div>
-        <form
-          className="dj-prompt"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (prompt.trim()) runRequest(prompt.trim());
-          }}
-        >
-          <span className="dj-prompt-mark">›</span>
-          <input
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="動きを指示する  —  例: 元気に踊って"
-            aria-label="動きの指示"
-          />
-          <button type="submit">RUN</button>
-        </form>
-        <div className="dj-chips">
-          {QUICK.map((item) => (
-            <button key={item.prompt} onClick={() => runRequest(item.prompt)}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <p className="dj-note">GEMINI LIVE MC + PROCEDURAL BODY / CLIPS AS ATOMS</p>
-      </footer>
+      {mcCaption && (
+        <p className="dj-subtitle" aria-live="polite">
+          {mcCaption}
+        </p>
+      )}
 
       <div className={`dj-start ${started ? "is-hidden" : ""}`}>
         <div className="dj-start-inner">
           <p className="dj-kicker">MIRAGE LAB / 2026</p>
           <h1>
-            AI DJ
-            <span>ダンスステージ</span>
+            MIRAGE
+            <span>DANCE STAGE</span>
           </h1>
-          <p className="dj-start-copy">AI DJが考えて、喋って、踊る。</p>
+          <p className="dj-start-copy">音楽に合わせて、その場で踊る。</p>
           <button onClick={startSession}>START SESSION</button>
-          <small>音が出ます / ヘッドホン推奨 / MCはGemini Live</small>
+          <small>音が出ます / ヘッドホン推奨</small>
         </div>
       </div>
     </div>

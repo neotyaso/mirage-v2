@@ -173,166 +173,33 @@ body {
   letter-spacing: 0.16em;
 }
 
-.dj-hint {
-  position: absolute;
-  z-index: 3;
-  left: clamp(18px, 3vw, 36px);
-  top: 50%;
-  transform: translateY(-50%);
-  writing-mode: vertical-rl;
-  color: rgba(127, 138, 163, 0.7);
-  font-family: "SFMono-Regular", Menlo, monospace;
-  font-size: 9px;
-  letter-spacing: 0.4em;
-  pointer-events: none;
-}
-
-.dj-console {
+.dj-subtitle {
   position: absolute;
   z-index: 4;
   left: 50%;
-  bottom: clamp(18px, 3.5vh, 36px);
+  bottom: clamp(24px, 5vh, 54px);
   transform: translateX(-50%);
   width: min(760px, calc(100vw - 2 * clamp(18px, 3vw, 36px)));
-  padding: 14px;
-  border: 1px solid var(--dj-line);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(9, 13, 24, 0.82), rgba(5, 7, 14, 0.9));
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
-}
-
-.dj-mc {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 0 2px 10px;
-}
-
-.dj-mc-label {
-  flex: none;
-  border: 1px solid rgba(255, 95, 178, 0.45);
-  border-radius: 6px;
-  color: var(--dj-pink);
-  padding: 3px 6px;
-  font-family: "SFMono-Regular", Menlo, monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
-
-.dj-mc p {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  margin: 1px 0 0;
-  color: rgba(243, 241, 234, 0.9);
-  font-size: 12px;
-  line-height: 1.45;
-  letter-spacing: 0.01em;
-}
-
-.dj-prompt {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  background: rgba(2, 4, 9, 0.6);
-  padding: 0 12px;
-}
-
-.dj-prompt:focus-within {
-  border-color: rgba(94, 231, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(94, 231, 255, 0.08);
-}
-
-.dj-prompt-mark {
-  color: var(--dj-cyan);
-  font-size: 20px;
-  line-height: 1;
-}
-
-.dj-prompt input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--dj-ink);
-  padding: 14px 0;
-  font: inherit;
-  font-size: 14px;
-  outline: none;
-}
-
-.dj-prompt input::placeholder {
-  color: rgba(127, 138, 163, 0.6);
-}
-
-.dj-prompt button {
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  background: var(--dj-cyan);
-  color: #021016;
-  padding: 8px 14px;
-  font-family: "SFMono-Regular", Menlo, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  cursor: pointer;
-  transition: transform 140ms ease, box-shadow 140ms ease;
-}
-
-.dj-prompt button:hover,
-.dj-prompt button:focus-visible {
-  transform: translateY(-1px);
-  box-shadow: 0 0 22px rgba(94, 231, 255, 0.35);
-  outline: none;
-}
-
-.dj-chips {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.dj-chips::-webkit-scrollbar {
-  display: none;
-}
-
-.dj-chips button {
-  appearance: none;
-  flex: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(243, 241, 234, 0.82);
-  padding: 7px 12px;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
-}
-
-.dj-chips button:hover,
-.dj-chips button:focus-visible {
-  border-color: rgba(255, 95, 178, 0.55);
-  background: rgba(255, 95, 178, 0.08);
-  color: var(--dj-ink);
-  outline: none;
-}
-
-.dj-note {
-  margin: 10px 2px 0;
-  color: rgba(127, 138, 163, 0.62);
-  font-family: "SFMono-Regular", Menlo, monospace;
-  font-size: 8px;
-  letter-spacing: 0.14em;
+  margin: 0;
+  color: rgba(243, 241, 234, 0.92);
+  font-size: clamp(12px, 1.4vw, 15px);
+  line-height: 1.5;
+  letter-spacing: 0.04em;
   text-align: center;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  animation: dj-fade-in 300ms ease both;
+}
+
+@keyframes dj-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .dj-start {
@@ -448,8 +315,7 @@ body {
 }
 
 @media (max-width: 720px) {
-  .dj-brand-sub,
-  .dj-hint {
+  .dj-brand-sub {
     display: none;
   }
 
@@ -461,24 +327,9 @@ body {
     font-size: 24px;
   }
 
-  .dj-console {
-    padding: 10px;
-    border-radius: 15px;
-  }
-
-  .dj-prompt input {
-    font-size: 13px;
-    padding: 12px 0;
-  }
-
-  .dj-chips button {
-    font-size: 10px;
-    padding: 6px 10px;
-  }
-
-  .dj-note {
-    font-size: 7px;
-    letter-spacing: 0.08em;
+  .dj-subtitle {
+    bottom: 22px;
+    font-size: 12px;
   }
 
   .dj-start h1 span {
@@ -488,7 +339,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .dj-start-inner,
-  .dj-live i {
+  .dj-live i,
+  .dj-subtitle {
     animation: none;
   }
 
