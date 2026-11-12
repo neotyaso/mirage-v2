@@ -437,10 +437,10 @@ export function DanceStage() {
       modeCallbackRef.current(next);
     };
 
-    // 曲のBPMに身体の再生速度を合わせる。振付の土台はここ。
+    // クリップ1周が整数小節になる再生速度。ループの継ぎ目を小節頭に戻す土台。
     const syncSpeed = () => {
       if (!current) return;
-      current.timeScale = timeScaleForClip(current.getClip().name, audio.bpm);
+      current.timeScale = timeScaleForClip(current.getClip(), audio.bpm);
     };
 
     const fadeTo = (name: string, alignToBeat = false) => {
@@ -809,6 +809,13 @@ export function DanceStage() {
             <i />
             LIVE
           </span>
+          <button
+            className="dj-icon"
+            onClick={() => (show.playing ? apiRef.current?.stopMusic(1) : apiRef.current?.playTrack("neon"))}
+            aria-label={show.playing ? "音楽を止める" : "音楽をかける"}
+          >
+            {show.playing ? "STOP MUSIC" : "PLAY MUSIC"}
+          </button>
           <button className="dj-icon" onClick={toggleMute} aria-label={muted ? "音を出す" : "音を消す"}>
             {muted ? "SOUND OFF" : "SOUND ON"}
           </button>
@@ -837,9 +844,9 @@ export function DanceStage() {
             MIRAGE
             <span>DANCE STAGE</span>
           </h1>
-          <p className="dj-start-copy">音楽に合わせて、その場で踊る。</p>
+          <p className="dj-start-copy">PLEASE TURN UP THE VOLUME.</p>
           <button onClick={startSession}>START SESSION</button>
-          <small>音が出ます / ヘッドホン推奨</small>
+          <small>SOUND WILL PLAY / HEADPHONES RECOMMENDED</small>
         </div>
       </div>
     </div>

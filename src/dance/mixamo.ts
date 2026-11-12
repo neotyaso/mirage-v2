@@ -6,17 +6,17 @@ const DIR = "/models/mixamo";
 
 /**
  * Mixamo のモーションは 30fps のモーションキャプチャで、曲のテンポとは独立している。
- * bpm は「このクリップが本来持っている拍」の目安。再生速度だけを曲に合わせる。
+ * 再生速度は timeScaleForClip がクリップ長を整数小節にフィットさせて決める。
  */
 export const MIXAMO_CLIPS = [
   { id: "Idle", file: "Idle" },
   { id: "Walking", file: "Walking" },
   // firstBeat は「クリップ先頭から1拍目まで」の秒数。Mixamo は先頭が拍頭の前提。
   // 拍がズレるクリップだけここを調整する。
-  { id: "Robot_Hip_Hop_Dance", file: "Robot_Hip_Hop_Dance", bpm: 100, firstBeat: 0 },
-  { id: "Breakdance_Uprock", file: "Breakdance_Uprock", bpm: 110, firstBeat: 0 },
-  { id: "Jazz_Dancing", file: "Jazz_Dancing", bpm: 128, firstBeat: 0 },
-  { id: "House_Dancing", file: "House_Dancing", bpm: 110, firstBeat: 0 },
+  { id: "Robot_Hip_Hop_Dance", file: "Robot_Hip_Hop_Dance", firstBeat: 0 },
+  { id: "Twist_Dance", file: "Twist_Dance", firstBeat: 0 },
+  { id: "Macarena_Dance", file: "Macarena_Dance", firstBeat: 0 },
+  { id: "House_Dancing", file: "House_Dancing", firstBeat: 0 },
 ] as const;
 
 type ClipDef = (typeof MIXAMO_CLIPS)[number];
@@ -24,18 +24,13 @@ export type MixamoClipId = ClipDef["id"];
 
 const STYLE_CLIP: Record<DanceStyle, MixamoClipId> = {
   hype: "Robot_Hip_Hop_Dance",
-  cool: "Breakdance_Uprock",
-  cute: "Jazz_Dancing",
+  cool: "Twist_Dance",
+  cute: "Macarena_Dance",
   chill: "House_Dancing",
 };
 
 export function clipForStyle(style: DanceStyle): MixamoClipId {
   return STYLE_CLIP[style] ?? "Robot_Hip_Hop_Dance";
-}
-
-function bpmFor(id: string): number | null {
-  const def = MIXAMO_CLIPS.find((clip) => clip.id === id);
-  return def && "bpm" in def ? def.bpm : null;
 }
 
 /** 横方向のルートモーションだけ殺して、ステージ中央で踊らせる。上下は残す。 */
@@ -139,10 +134,19 @@ export async function loadMixamoRig(loader: GLTFLoader): Promise<MixamoRig> {
   return { model, mixer, actions };
 }
 
-export function timeScaleForClip(id: string, bpm: number): number {
-  const natural = bpmFor(id);
-  if (!natural) return 1;
-  return THREE.MathUtils.clamp(bpm / natural, 0.8, 1.25);
+/**
+ * 再生速度を「クリップ1周が整数小節になる」ように決める。
+ * こうするとループの継ぎ目が必ず小節頭に戻り、同じ動きの繰り返しが規則的なフレーズとして見える。
+ * bpm同期とのトレードオフで、身体のテンポは自然の速度から最大±25%ずれる。
+ */
+export function timeScaleForClip(clip: THREE.AnimationClip, bpm: number): number {
+  const bar = 240 / bpm; // 1小節の秒数
+  const natural = clip.duration;
+  const nMin = Math.ceil(natural / (bar * 1.25));
+  const nMax = Math.floor(natural / (bar * 0.8));
+  if (nMax < nMin) return 1; // 整数小節に収まらないクリップは等速のまま
+  const bars = THREE.MathUtils.clamp(Math.round(natural / bar), nMin, nMax);
+  return natural / (bars * bar);
 }
 
 /** 小節頭でクリップを開始するときの、クリップ内の開始秒。 */

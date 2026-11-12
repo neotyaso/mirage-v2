@@ -89,7 +89,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | Face | 表情・視線・リップシンクは未実装 | なし |
 
 - 現在は **モーションキャプチャのクリップ主体**。旧 `dance.ts` の procedural サンプラーはステージから未使用（MC ツール用の型・検証だけ残す）。
-- style はクリップに対応する: hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`。
+- style はクリップに対応する: hype=`Robot_Hip_Hop_Dance` / cool=`Twist_Dance` / cute=`Macarena_Dance` / chill=`House_Dancing`。クリップの再生速度は 1 周が整数小節になるよう調整し、ループの継ぎ目を小節頭に揃える。
 - BPM 同期は `AnimationAction.timeScale = bpm / クリップ本来のBPM`（0.8〜1.25 にクランプ）。
 - 横方向の Hips ルートモーションは 0 にして、ステージ中央で踊らせる。上下のバウンスはクリップに任せる。
 - 歩行は `Walking` クリップ＋ルート移動。到着後は Dance / Idle へ戻る。
@@ -133,6 +133,8 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - ステージ上に現在のモード、曲、BPM、セクション/style を表示する。
 - MC の発話をテキストでも表示する。
 - `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` のクイック操作を用意する。
+- ヘッダーに音楽の停止／再開ボタンを置く。停止は次の小節頭に量子化する。
+- 開始前に黒背景・白文字で音量を促すオーバーレイを出す。
 - MC と音楽のミュートを個別に切り替えられる。
 - モバイルでもステージと操作が破綻しない。
 - Studio が落ちている場合は「MC OFFLINE」と明示し、ステージ操作は継続する。

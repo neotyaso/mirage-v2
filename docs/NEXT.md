@@ -9,8 +9,9 @@
 - `/` が AI DJ ステージ。`dance.html` は互換エイリアス。
 - 身体は **Mixamo の Michelle ＋ モーションキャプチャのダンスクリップ**。`src/dance/mixamo.ts` が読み込み・BPM 追従・クロスフェード・接地正規化を持つ。`RobotExpressive.glb` と手続きダンス層はステージから外した。
 - `ShowAction` / `ShowState`、Pixabay の無料楽曲「Dance Electro 120 bpm」1曲、停止フェード、ダッキング、拍位相、BPM 同期、歩行が動く。
-- ダンスクリップは `Robot_Hip_Hop_Dance`（hype）/ `Breakdance_Uprock`（cool）/ `Jazz_Dancing`（cute）/ `House_Dancing`（chill）。`src/dance/dance.ts` の手続きサンプラーは未使用で、style/moves の型と `mergeDanceCue` だけ MC ツール用に残している。
+- ダンスクリップは `Robot_Hip_Hop_Dance`（hype）/ `Twist_Dance`（cool）/ `Macarena_Dance`（cute）/ `House_Dancing`（chill）。`Breakdance_Uprock`（2.25秒で背を向ける短いループ）と `Jazz_Dancing`（Tポーズのまま同じキックを繰り返す壊れたクリップ）は 2026-11-12 に差し替えた。`src/dance/dance.ts` の手続きサンプラーは未使用で、style/moves の型と `mergeDanceCue` だけ MC ツール用に残している。
 - ビートグリッドは **120 BPM / 先頭ダウンビート 0.987s / 60小節**。`show.ts` の `sectionAtBar` が intro / build / drop / break / outro を返し、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭に量子化する。
+- ヘッダーに **STOP MUSIC / PLAY MUSIC** ボタン、開始前に黒背景・白文字の **PLEASE TURN UP THE VOLUME.** オーバーレイを置いた。
 - `scripts/test-mixamo.mjs` で GLB、`scripts/test-audio.mjs` で音源、`scripts/test-sections.mjs` でビートグリッドとセクション割りを確認。`scripts/test-dance.mjs` は旧手続き核のテストとして残っている。
 - Gemini Live MC は現在**接続していない**。`useGeminiLive` とツールは残しているが、`startSession` から `connect()` しない。ステージはダンスのみ。
 - レセプションの会話 UI・2D キャラ・会話フローは削除済み。カメラ／表情／トラッキング／Studio 基盤は再利用資産として残している。
@@ -49,6 +50,7 @@
 
 ## 直近の作業ログ
 
+- 2026-11-12: ダンスの見た目バグを修正。`Breakdance_Uprock`（2.25秒・胸元を指すジェスチャ・背を向ける短いループ）を `Twist_Dance` に、`Jazz_Dancing`（Tポーズのまま同じキックを繰り返す）を `Macarena_Dance` に差し替えた。`timeScaleForClip` を「クリップ1周が整数小節になる速度」に変更し、ループの継ぎ目を小節頭へ戻した。ヘッダーに STOP MUSIC / PLAY MUSIC、開始前に黒背景・白文字の音量オーバーレイを追加。ヘッドレス Chrome で intro / drop / break / build / outro の各クリップと停止ボタンを確認。
 - 2026-11-12: 曲の解析から **先頭ダウンビート 0.987s / 120 BPM / 60小節** のビートグリッドを `show.ts` に持たせ、`DanceAudio` の拍・小節をこの頭出しに合わせた。`sectionAtBar` で intro / drop / break / build / outro を引き、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭まで待って実行。ヘッドレス Chrome で 8/16/24小節の切替と、停止が小節線に乗ることを確認。`scripts/test-sections.mjs` を追加。
 - 2026-11-12: 音楽を Web Audio シンセ2曲から **Pixabay の無料楽曲「Dance Electro 120 bpm - Full」（120 BPM）** に差し替え。`DanceAudio` は MP3 を `AudioBufferSourceNode` でループ再生し、BPM から拍位相を作る。出典・ライセンスは `public/audio/README.md`、`scripts/test-audio.mjs` を追加。
 - 2026-11-12: ステージの身体を **Mixamo の Michelle＋モーションキャプチャのダンス**へ置き換え。`RobotExpressive.glb` と手続きダンス層をステージから外し、`src/dance/mixamo.ts` で BPM 追従・クロスフェード・接地正規化・横方向ルートモーション除去を実装。`public/models/mixamo/` に出典を記録し、`scripts/test-mixamo.mjs` を追加。ヘッドレス Chrome でダンス中の見た目と JS エラーなしを確認。

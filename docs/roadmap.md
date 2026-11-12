@@ -38,7 +38,7 @@
 
 - ステージの身体を **Mixamo の Michelle＋モーションキャプチャのダンス**に置き換え。`RobotExpressive.glb` と手続きダンス層はステージから外した。
 - `src/dance/mixamo.ts` に Mixamo の読み込み・足の接地正規化・横方向ルートモーション除去・BPM 追従の `timeScale` を実装。
-- ダンスクリップは hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`。
+- ダンスクリップは hype=`Robot_Hip_Hop_Dance` / cool=`Twist_Dance` / cute=`Macarena_Dance` / chill=`House_Dancing`。
 - 黒ステージ用のフロント光、人間の肌・布がブルームで飛ばないマテリアル調整、カメラ距離の調整。
 - アセットの出典とライセンスを `public/models/mixamo/README.md` に記録。`scripts/test-mixamo.mjs` で GLB を検査。
 - 音楽を Pixabay の無料楽曲「Dance Electro 120 bpm - Full」に差し替え。出典は `public/audio/README.md`、`scripts/test-audio.mjs` で音源を検査。

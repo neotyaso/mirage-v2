@@ -540,7 +540,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 ### Phase 3: ダンス身体（実装済み / 2026-11-12 に Mixamo へ移行）
 
 - Mixamo の Michelle＋モーションキャプチャのダンスクリップ（`src/dance/mixamo.ts`）
-- style をクリップへマップ: hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`
+- style をクリップへマップ: hype=`Robot_Hip_Hop_Dance` / cool=`Twist_Dance` / cute=`Macarena_Dance` / chill=`House_Dancing`
 - 歩行はルート移動＋ Mixamo の `Walking` クリップ
 - BPMに合わせて `AnimationAction.timeScale` を変更（0.8〜1.25）
 - `sectionAtBar` が曲の小節からセクションを引き、小節頭でセクションのクリップへクロスフェード

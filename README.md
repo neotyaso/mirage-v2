@@ -16,7 +16,8 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 - Gemini Live の DJ 人格 MC（コードは残るが現在は未接続）
 - LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残るが、MC 接続は休止中
 - 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
-- MIRAGE ヘッダー、モード／曲／BPM／セクション/style の readout、SOUND ON / OFF、モバイル対応
+- MIRAGE ヘッダー、モード／曲／BPM／セクション/style の readout、STOP MUSIC / PLAY MUSIC、SOUND ON / OFF、モバイル対応
+- 開始前の黒背景・白文字オーバーレイ（PLEASE TURN UP THE VOLUME.）
 
 **公演の1巡**: ダンス → 音楽停止 → 歩行 → 曲を頭から再開 → ダンス。
 
