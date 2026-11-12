@@ -1,8 +1,8 @@
 # AI DJ / 3D Performance Architecture
 
-> 最終更新: 2026-11-08  
-> 状態: **本線**。Phase 0〜4 実装済み。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、プロシージャル身体、Gemini Live MC/Director まで接続。  
-> 現状: 音は2パターンのシンセ、身体はロボットのクリップ＋手続き層。生成special・本物の曲・観客入力・リップシンクは未着手。  
+> 最終更新: 2026-11-12  
+> 状態: **本線**。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンスまで接続。Gemini Live MC/Director はコードを残して休止中。  
+> 現状: 音は2パターンのシンセ、身体は Mixamo の Michelle＋モーションキャプチャのダンス。生成special・本物の曲・観客入力・表情・リップシンクは未着手。  
 > 関連: 要件は [requirements.md](requirements.md)、着手順は [roadmap.md](roadmap.md)、決定は [decisions.md](decisions.md)（D-022 / D-023）。
 
 ---
@@ -304,7 +304,9 @@ Dance（cute / 8小節）
 
 **重要:** atomは「完成振付」ではなく「動きの部品」。並び・タイミング・強弱はLLMが毎小節組む。
 
-**実装（2026-11-08）**: `src/dance/dance.ts` の `sampleDance(clock, cue)` が base groove と atom を合成する純関数。style は `cute / cool / hype / chill`、moves は LLM の `dance` ツールから小節ごとに指定する。Three.js 側は `DanceStage.tsx` が GLTFLoader の sanitize 名を吸収してボーンへ加算する。
+**旧実装（2026-11-08 / 2026-11-12 に退役）**: `src/dance/dance.ts` の `sampleDance(clock, cue)` が base groove と atom を合成する純関数。Three.js 側は `DanceStage.tsx` が GLTFLoader の sanitize 名を吸収してボーンへ加算していた。
+
+**現在（2026-11-12〜）**: 身体は Mixamo のモーションキャプチャクリップ主体。`src/dance/mixamo.ts` がクリップを読み込み、style（cute / cool / hype / chill）をクリップへマップし、BPM に `timeScale` を合わせる。`dance.ts` の型・検証・`mergeDanceCue` は MC ツール用に残している。
 
 ### 6.3 10%側
 
@@ -513,7 +515,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 ### Phase 0: 3Dステージ（完了）
 
 - `index.html`（`dance.html` は互換エイリアス）
-- Three.js + ロボット
+- Three.js + Mixamo の人間キャラ（Michelle）
 - クリップ再生、テキスト→クリップ、BPM、シンセ音
 - Bloom、ライト、粒子、レスポンシブ
 - `pnpm build` / `tsc` 通過
@@ -533,14 +535,13 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - 声はGemini Liveのネイティブ音声。マイクは開かない（`capture:false`）のでハウリングしない
 - カメラの人数・表情はまだ入力していない
 
-### Phase 3: ダンス核 / プロシージャル身体（実装済み）
+### Phase 3: ダンス身体（実装済み / 2026-11-12 に Mixamo へ移行）
 
-- `src/dance/dance.ts` の純関数が base groove（bounce / sway / hip / head）を常時生成
-- 小節ごとに atom（bounce / sway / stepTouch / armWave / point / spin / pose / headNod）を重ねる
-- style（cute / cool / hype / chill）と energy 0..1 で振幅と選曲を変える
-- 歩行はルート移動＋Walkingクリップ
-- BPMに合わせて `AnimationAction.timeScale` を変更。ダンスの拍位相は `DanceAudio.getPhase()` から取る
-- GLTFLoader の sanitize 名（`UpperArm.L` → `UpperArmL`）を `BONE_ALIASES` で吸収
+- Mixamo の Michelle＋モーションキャプチャのダンスクリップ（`src/dance/mixamo.ts`）
+- style をクリップへマップ: hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`
+- 歩行はルート移動＋ Mixamo の `Walking` クリップ
+- BPMに合わせて `AnimationAction.timeScale` を変更（0.8〜1.25）。ダンスの拍位相は `DanceAudio.getPhase()` から取る
+- 旧 `src/dance/dance.ts` の base groove＋atom はステージから退役（型・検証だけ残す）
 
 ### Phase 4: LLM Director（実装済み）
 
@@ -560,7 +561,8 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 ### Phase 6: キャラクター
 
-- ロボットのまま / VRM猫耳人間 / 3D猫
+- Mixamo の Michelle を採用済み
+- VRM猫耳人間 / 3D猫は候補から外す
 - Retargeterを調整
 - 表情・リップシンク
 
@@ -580,13 +582,14 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 | ファイル | 内容 |
 | --- | --- |
 | `index.html` | 3Dステージのエントリ（`/`）。`dance.html` は互換エイリアス |
-| `src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、プロシージャル身体、UI、MC接続 |
+| `src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、Mixamo の再生、UI |
 | `src/dance/show.ts` | `ShowAction` / `ShowState`、2曲、ステージマーク |
 | `src/dance/mc.ts` | DJ用システムプロンプト、Gemini Liveツール、MCプロンプト |
 | `src/dance/audio.ts` | 2曲のWeb Audioシンセ、停止フェード、ダッキング、拍位相 |
+| `src/dance/mixamo.ts` | Mixamo の読み込み、接地正規化、ルートモーション除去、BPM 追従 |
 | `src/dance/dance.css` | ステージUI（MCパネル含む） |
 | `src/hooks/useGeminiLive.ts` | カスタムプロンプト／ツール／ツール実行／`capture:false`／`prompt()` を追加 |
-| `public/models/RobotExpressive.glb` | 仮ロボット（CC0: Tomás Laulhé / Don McCurdy） |
+| `public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは README） |
 | `vite.config.ts` | `index.html` と `dance.html` をビルド入力に持つ |
 
 ### 実装メモ
@@ -594,8 +597,8 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - **MCは出力専用**。`capture:false` でマイクを開かないため、スピーカーの音を拾わない。観客との双方向会話は、音楽の回り込み対策を設計してから足す。
 - **MCの判断**。8小節ごとに `buildMcPrompt` を送り、モデルが発話するか黙るかを決める。「話して」ボタンは強制プロンプト。
 - **Ducking**。`gemini.state === "speaking"` または `mode === "talk"` の間、音楽バスを0.28に下げる。
-- **BPM同期**。音楽クロックの拍位相でルートbounce/sway/head nodを生成し、`timeScale = bpm / 112` でクリップ速度を合わせる。
-- **energy**。`dance` ツールの `energy` 0..1 を bounce / sway / head nod の振幅に反映する。`style` は現状energyに丸め（クリップ/atomが増えたら分岐）。
+- **BPM同期**。Mixamo クリップの `timeScale = bpm / クリップ本来のBPM`（0.8〜1.25）。拍の頭でライトがパルスする。
+- **style**。hype / cool / cute / chill を Mixamo クリップへマップする。`energy` と `moves` は今は見た目に反映しない（MC 休止中）。
 - **歩行**。`center / left / right / front` のマークへルート移動。到着後はIdleまたはDanceへ戻る。
 - **停止**。1小節フェード。身体はIdleへクロスフェード。
 - **フォールバック**。Studioが落ちている／トークンが取れない場合は「MC OFFLINE」と表示し、ステージは動き続ける。
@@ -609,7 +612,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - `nextBar` での厳密なキューイング（今は即時実行）
 - `shortcut:` 歩行は直線移動＋到着後に向き直るだけ。段差・障害物・足滑り補正なし
 - 実機マイク／スピーカーの回り込み試験
-- 本番キャラクター（ロボットは仮）
+- 表情・ジェスチャー・リップシンク（Mixamo Michelle 本体は導入済み）
 
 ### 起動
 
@@ -625,7 +628,7 @@ MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無
 
 ## 12. 未決事項
 
-- キャラクター: ロボットのまま / VRM猫耳人間 / 3D猫
+- キャラクター: Mixamo Michelle に決定。表情・視線の実装方法
 - 最初に試す生成モデル: TM2D / FlowerDance / EDGE
 - 音楽: シンセのまま / CC0楽曲 / 生成音楽
 - 展示の音響: スピーカー＋マイクの回り込み対策
@@ -641,7 +644,7 @@ MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無
 - MCが喋りすぎる / 同じことを繰り返す
 - 音楽とマイクの回り込みで誤反応する
 - 曲のライセンスが未解決
-- ロボット以外のキャラクターにした場合、リターゲット工数が増える
+- VRM / 生成モーションへ移す場合、リターゲット工数が増える
 
 ---
 

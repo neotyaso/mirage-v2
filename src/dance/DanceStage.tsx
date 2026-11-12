@@ -13,13 +13,11 @@ import {
   isDanceMove,
   isDanceStyle,
   mergeDanceCue,
-  sampleDance,
-  type DanceBone,
   type DanceCue,
   type DanceMove,
-  type DancePose,
   type DanceStyle,
 } from "./dance";
+import { clipForStyle, loadMixamoRig, timeScaleForClip } from "./mixamo";
 import { DJ_SYSTEM_PROMPT, DJ_TOOLS, buildMcPrompt } from "./mc";
 import {
   MARKS,
@@ -35,26 +33,6 @@ import "./dance.css";
 
 const PLATFORM_TOP = 0.14;
 const BASE_BPM = TRACKS.neon.bpm;
-
-// GLTFLoader はノード名を sanitize する（UpperArm.L -> UpperArmL、重複 -> _1）。
-// ダンス側は読みやすい名前のまま、実ボーンへの対応だけここで持つ。
-const BONE_ALIASES: Record<string, DanceBone> = {
-  Hips: "Hips",
-  Abdomen: "Abdomen",
-  Torso: "Torso",
-  Neck: "Neck",
-  Head: "Head",
-  ShoulderL: "Shoulder.L",
-  ShoulderR: "Shoulder.R",
-  UpperArmL: "UpperArm.L",
-  LowerArmL: "LowerArm.L",
-  UpperArmR: "UpperArm.R",
-  LowerArmR: "LowerArm.R",
-  UpperLegL: "UpperLeg.L",
-  LowerLegL: "LowerLeg.L",
-  UpperLegR: "UpperLeg.R",
-  LowerLegR: "LowerLeg.R",
-};
 
 type StageApi = {
   start: () => void;
@@ -395,15 +373,21 @@ export function DanceStage() {
     key.shadow.camera.bottom = -1;
     scene.add(key);
 
-    const spotA = new THREE.SpotLight(0x5ee7ff, 100, 20, 0.6, 0.9, 2);
+    const spotA = new THREE.SpotLight(0x5ee7ff, 55, 20, 0.6, 0.9, 2);
     spotA.position.set(3.2, 5.4, 1.6);
     spotA.target.position.set(0, 1, 0);
     scene.add(spotA, spotA.target);
 
-    const spotB = new THREE.SpotLight(0xff5fb2, 80, 20, 0.55, 1, 2);
+    const spotB = new THREE.SpotLight(0xff5fb2, 40, 20, 0.55, 1, 2);
     spotB.position.set(-3.2, 4.6, -1.2);
     spotB.target.position.set(0, 1, 0);
     scene.add(spotB, spotB.target);
+
+    // 黒いステージで人物の顔と服が沈まないためのフロント光。
+    const front = new THREE.DirectionalLight(0xffffff, 1.15);
+    front.position.set(0.6, 2.8, 4.5);
+    front.target.position.set(0, 1.15, 0);
+    scene.add(front, front.target);
 
     // 接地影
     const shadowCanvas = document.createElement("canvas");
@@ -430,7 +414,7 @@ export function DanceStage() {
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.5, 0.9);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.5, 1.02);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
@@ -454,27 +438,10 @@ export function DanceStage() {
     let walkTarget: THREE.Vector3 | null = null;
     let disposed = false;
     let startedAt = -1;
-    let baseRadius = 4.6;
+    let baseRadius = 4.2;
     let stageX = 0;
     let stageZ = 0;
     let baseYaw = 0;
-    let dancePose: DancePose | null = null;
-    let smoothYaw = 0;
-    let smoothRootX = 0;
-    let smoothRootY = 0;
-    let smoothRootRoll = 0;
-    const rigBones = new Map<string, THREE.Bone>();
-    const footBones: THREE.Bone[] = [];
-    let bodyBone: THREE.Bone | null = null;
-    const bodyRestPos = new THREE.Vector3();
-    let footGroundOffset = 0;
-    let footGround = 0;
-    const footWorld = new THREE.Vector3();
-    const restQuats = new Map<string, THREE.Quaternion>();
-    const animatedTracks = new Map<THREE.AnimationAction, Set<string>>();
-    const poseEuler = new THREE.Euler();
-    const poseQuat = new THREE.Quaternion();
-    const baseQuat = new THREE.Quaternion();
 
     const setMode = (next: ShowMode) => {
       if (mode === next) return;
@@ -482,194 +449,70 @@ export function DanceStage() {
       modeCallbackRef.current(next);
     };
 
-    const oneShot = new Set(["Jump", "ThumbsUp", "Wave", "Yes", "No", "Punch", "Death", "WalkJump"]);
+    // 曲のBPMに身体の再生速度を合わせる。振付の土台はここ。
+    const syncSpeed = () => {
+      if (!current) return;
+      current.timeScale = timeScaleForClip(current.getClip().name, audio.bpm);
+    };
 
     const fadeTo = (name: string) => {
       const next = actions.get(name) ?? actions.get("Idle");
       if (!next) return;
       if (next === current) {
-        // 同じループクリップを dance ツールのたびに頭へ戻さない。one-shot だけ再生し直す。
-        if (oneShot.has(name)) next.reset().play();
-        else next.play();
+        next.play();
         return;
       }
       next.reset();
       next.enabled = true;
       next.setEffectiveWeight(1);
-      next.setLoop(oneShot.has(name) ? THREE.LoopOnce : THREE.LoopRepeat, oneShot.has(name) ? 1 : Infinity);
-      next.clampWhenFinished = oneShot.has(name);
+      next.setLoop(THREE.LoopRepeat, Infinity);
+      next.clampWhenFinished = false;
       next.play();
-      if (current) current.crossFadeTo(next, 0.32, false);
-      else next.fadeIn(0.3);
+      if (current) current.crossFadeTo(next, 0.28, false);
+      else next.fadeIn(0.35);
       current = next;
+      syncSpeed();
     };
 
-    // 曲のBPMに身体の再生速度を合わせる。振付の土台はここ。
-    const syncSpeed = () => {
-      const base = actions.get(baseClip);
-      if (!base) return;
-      base.timeScale = Math.max(0.65, Math.min(1.5, audio.bpm / BASE_BPM));
-    };
-
-    const trackBones = (action: THREE.AnimationAction) => {
-      let set = animatedTracks.get(action);
-      if (!set) {
-        set = new Set<string>();
-        for (const track of action.getClip().tracks) {
-          const dot = track.name.lastIndexOf(".");
-          set.add(dot > 0 ? track.name.slice(0, dot) : track.name);
-        }
-        animatedTracks.set(action, set);
-      }
-      return set;
-    };
-
-    // mixer.update() の後ろにローカル回転を足す。アニメーションが書かない骨は
-    // rest を基準にするので、フレームをまたいで回転が累積しない。
-    const applyRigPose = (pose: DancePose | null) => {
-      const animated = new Set<string>();
-      for (const action of actions.values()) {
-        if (!action.isRunning()) continue;
-        for (const name of trackBones(action)) animated.add(name);
-      }
-      for (const [name, bone] of rigBones) {
-        if (animated.has(bone.name)) baseQuat.copy(bone.quaternion);
-        else {
-          const rest = restQuats.get(name);
-          if (!rest) continue;
-          baseQuat.copy(rest);
-        }
-        const offset = pose?.bones[name as DanceBone];
-        if (offset && (offset[0] !== 0 || offset[1] !== 0 || offset[2] !== 0)) {
-          poseEuler.set(offset[0], offset[1], offset[2]);
-          poseQuat.setFromEuler(poseEuler);
-          bone.quaternion.copy(baseQuat).multiply(poseQuat);
-        } else {
-          bone.quaternion.copy(baseQuat);
-        }
-      }
-      // Dance クリップの Body.position は足を置き去りにして浮くので、ダンス中は固定する。
-      if (pose && bodyBone) bodyBone.position.copy(bodyRestPos);
-    };
-
-    const smooth = (value: number, target: number, dt: number, rate = 14) =>
-      value + (target - value) * (1 - Math.exp(-rate * dt));
     const smoothAngle = (value: number, target: number, dt: number, rate = 10) => {
       const delta = Math.atan2(Math.sin(target - value), Math.cos(target - value));
       return value + delta * (1 - Math.exp(-rate * dt));
     };
 
-    // RobotExpressive.glb: Tomás Laulhé / Don McCurdy, CC0 1.0 (Three.js examples)
+    // Mixamo: Michelle + モーションキャプチャのダンスクリップ。
     const loader = new GLTFLoader();
-    loader.load("/models/RobotExpressive.glb", (gltf) => {
-      if (disposed) return;
-      const model = gltf.scene;
-      model.traverse((obj) => {
-        if (obj instanceof THREE.Bone) {
-          if (obj.name === "Body") {
-            bodyBone = obj;
-            bodyRestPos.copy(obj.position);
-          }
-          if (/^Foot\.?[LR]$/.test(obj.name)) footBones.push(obj);
-          const semantic = BONE_ALIASES[obj.name.replace(/_\d+$/, "")];
-          if (semantic && !rigBones.has(semantic)) {
-            rigBones.set(semantic, obj);
-            restQuats.set(semantic, obj.quaternion.clone());
-          }
-        }
-        if (obj instanceof THREE.Mesh) {
-          obj.castShadow = true;
-          obj.receiveShadow = true;
-          // 元モデルのオレンジを、ステージに合うパールホワイト＋グラファイトに差し替える。
-          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-          for (const material of materials) {
-            if (!(material instanceof THREE.MeshStandardMaterial)) continue;
-            if (material.name === "Main") {
-              material.color.set(0xb8c4d8);
-              material.metalness = 0.18;
-              material.roughness = 0.5;
-              material.emissive.set(0x0a2a36);
-              material.emissiveIntensity = 0.15;
-            } else if (material.name === "Grey") {
-              material.color.set(0x2b3446);
-              material.metalness = 0.7;
-              material.roughness = 0.35;
-            } else if (material.name === "Black") {
-              material.color.set(0x070a10);
-              material.metalness = 0.4;
-              material.roughness = 0.3;
-              material.emissive.set(0x123a4a);
-              material.emissiveIntensity = 0.5;
-            }
-          }
-        }
-      });
-
-      const box = new THREE.Box3().setFromObject(model);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      model.scale.setScalar(1.72 / Math.max(size.y, 0.001));
-      box.setFromObject(model);
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      model.position.x -= center.x;
-      model.position.z -= center.z;
-      model.position.y -= box.min.y;
-      robotRoot.add(model);
-      robotRoot.updateMatrixWorld(true);
-      let restFootY = Infinity;
-      for (const foot of footBones) {
-        foot.getWorldPosition(footWorld);
-        restFootY = Math.min(restFootY, footWorld.y);
-      }
-      if (Number.isFinite(restFootY)) footGroundOffset = restFootY - PLATFORM_TOP;
-
-      mixer = new THREE.AnimationMixer(model);
-      for (const clip of gltf.animations) {
-        // Dance クリップの脚・体幹・首は足IKや手続き層と噛み合わず、
-        // 浮いて見えるので、腕と表情だけを使う。
-        if (clip.name === "Dance") {
-          clip.tracks = clip.tracks.filter(
-            (track) =>
-              !/^(UpperLeg|LowerLeg)[LR]\./.test(track.name) &&
-              track.name !== "Body.quaternion" &&
-              track.name !== "Head.quaternion",
-          );
-        }
-        actions.set(clip.name, mixer.clipAction(clip));
-      }
-      mixer.addEventListener("finished", (event) => {
-        if (event.action === current) {
-          fadeTo(baseClip);
-          modeCallbackRef.current(mode);
-        }
-      });
-      fadeTo(desiredClip);
-      syncSpeed();
-    });
+    loadMixamoRig(loader)
+      .then((rig) => {
+        if (disposed) return;
+        robotRoot.add(rig.model);
+        mixer = rig.mixer;
+        for (const [name, action] of rig.actions) actions.set(name, action);
+        fadeTo(desiredClip);
+      })
+      .catch((error) => console.error("MIXAMO load failed", error));
 
     const setClip = (clip: string, bpm: number) => {
       audio.setBpm(bpm);
       if (clip === "Dance") {
-        baseClip = "Dance";
+        baseClip = clipForStyle(danceCue.style);
         setMode("dance");
       } else if (clip === "Walking" || clip === "Running") {
-        baseClip = clip;
+        baseClip = "Walking";
         setMode("walk");
+      } else {
+        baseClip = clip;
       }
-      desiredClip = clip;
-      fadeTo(clip);
-      syncSpeed();
+      desiredClip = baseClip;
+      fadeTo(baseClip);
     };
 
     apiRef.current = {
       start: () => {
         void audio.start("neon").catch(() => {});
         danceCue = { ...danceCue, energy: 0.8 };
-        baseClip = "Dance";
-        desiredClip = "Dance";
-        fadeTo("Dance");
-        syncSpeed();
+        baseClip = clipForStyle(danceCue.style);
+        desiredClip = baseClip;
+        fadeTo(baseClip);
         setMode("dance");
         startedAt = performance.now() / 1000;
       },
@@ -687,11 +530,10 @@ export function DanceStage() {
       playTrack: (trackId) => {
         walkTarget = null;
         void audio.playTrack(trackId).then(() => syncSpeed());
-        baseClip = "Dance";
-        desiredClip = "Dance";
-        fadeTo("Dance");
+        baseClip = clipForStyle(danceCue.style);
+        desiredClip = baseClip;
+        fadeTo(baseClip);
         setMode("dance");
-        syncSpeed();
       },
       walkTo: (mark) => {
         const target = MARKS[mark];
@@ -699,7 +541,6 @@ export function DanceStage() {
         baseClip = "Walking";
         desiredClip = "Walking";
         fadeTo("Walking");
-        syncSpeed();
         setMode("walk");
       },
       talk: () => {
@@ -720,18 +561,13 @@ export function DanceStage() {
         });
         if (!audio.playing) void audio.start().catch(() => {});
         audio.setDucked(false);
-        baseClip = "Dance";
-        desiredClip = "Dance";
-        fadeTo("Dance");
-        syncSpeed();
+        baseClip = clipForStyle(danceCue.style);
+        desiredClip = baseClip;
+        fadeTo(baseClip);
         setMode("dance");
       },
-      gesture: (intent) => {
-        const clip =
-          intent === "nod" ? "Yes" : intent === "point" ? "ThumbsUp" : intent === "celebrate" ? "Jump" : "Wave";
-        desiredClip = clip;
-        fadeTo(clip);
-        syncSpeed();
+      gesture: (_intent) => {
+        // MC のジェスチャーは今はダンスを止めない。Live 再接続時に専用クリップを足す。
       },
       getState: () => {
         const phase = audio.getPhase();
@@ -757,7 +593,7 @@ export function DanceStage() {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       const portrait = camera.aspect < 0.8;
-      baseRadius = portrait ? 7.6 : camera.aspect < 1.2 ? 5.2 : 4.6;
+      baseRadius = portrait ? 6.6 : camera.aspect < 1.2 ? 4.9 : 4.2;
     };
     resize();
     window.addEventListener("resize", resize);
@@ -772,7 +608,7 @@ export function DanceStage() {
       lastMs = nowMs;
       const t = (nowMs - startedMs) / 1000;
 
-      // 歩行はルート移動、ダンスは拍に合わせた手続き層をクリップに重ねる。
+      // 歩行はルート移動。ダンスは Mixamo クリップを拍に合わせて再生する。
       if (walkTarget) {
         const dx = walkTarget.x - stageX;
         const dz = walkTarget.z - stageZ;
@@ -780,10 +616,9 @@ export function DanceStage() {
         if (dist < 0.06) {
           walkTarget = null;
           const nextMode = audio.playing ? "dance" : "idle";
-          baseClip = audio.playing ? "Dance" : "Idle";
+          baseClip = audio.playing ? clipForStyle(danceCue.style) : "Idle";
           desiredClip = baseClip;
           fadeTo(baseClip);
-          syncSpeed();
           setMode(nextMode);
         } else {
           const step = Math.min(dist, 0.9 * dt);
@@ -797,47 +632,15 @@ export function DanceStage() {
 
       mixer?.update(dt);
 
-      const phase = audio.getPhase();
-      const dancing = mode === "dance" && phase.playing && !reduceMotion;
-      const walking = mode === "walk" && !reduceMotion;
-      dancePose = dancing ? sampleDance(phase, danceCue) : null;
-      applyRigPose(dancePose);
-      smoothRootX = smooth(smoothRootX, dancePose?.rootX ?? 0, dt);
-      smoothRootY = smooth(smoothRootY, dancePose?.rootY ?? 0, dt);
-      smoothRootRoll = smooth(smoothRootRoll, dancePose?.rootRoll ?? 0, dt);
-      smoothYaw = smoothAngle(smoothYaw, dancePose?.rootYaw ?? 0, dt);
-
-      const bob = dancing ? smoothRootY : walking ? 0.012 : 0;
-      robotRoot.position.x = stageX + smoothRootX;
-      robotRoot.position.y = PLATFORM_TOP + bob;
-      robotRoot.position.z = stageZ;
-      robotRoot.rotation.y = baseYaw + smoothYaw;
-      robotRoot.rotation.z = smoothRootRoll;
-
-      // 膝を曲げても足が浮かないように、一番低い足を床へ寄せる。
-      if ((dancing || walking) && footBones.length > 0) {
-        robotRoot.updateMatrixWorld(true);
-        let lowestFoot = Infinity;
-        for (const foot of footBones) {
-          foot.getWorldPosition(footWorld);
-          lowestFoot = Math.min(lowestFoot, footWorld.y);
-        }
-        if (Number.isFinite(lowestFoot)) {
-          const target = PLATFORM_TOP + footGroundOffset - lowestFoot;
-          footGround = smooth(footGround, target, dt, 24);
-          robotRoot.position.y += footGround;
-        }
-      } else {
-        footGround = 0;
-      }
+      robotRoot.position.set(stageX, PLATFORM_TOP, stageZ);
+      robotRoot.rotation.y = baseYaw;
 
       contactShadow.position.x = robotRoot.position.x;
       contactShadow.position.z = robotRoot.position.z;
-      if (dancePose) pulse = Math.max(pulse, dancePose.accent);
 
       pulse *= Math.exp(-dt * 6);
-      spotA.intensity = 100 + pulse * 70;
-      spotB.intensity = 80 + pulse * 55;
+      spotA.intensity = 55 + pulse * 45;
+      spotB.intensity = 40 + pulse * 35;
       platformMat.emissiveIntensity = 0.35 + pulse * 0.9;
       ring.scale.setScalar(1 + pulse * 0.012);
       innerRing.rotation.z = t * 0.12;
@@ -866,8 +669,10 @@ export function DanceStage() {
           obj.geometry?.dispose();
           const material = obj.material;
           const list = Array.isArray(material) ? material : [material];
+          const mapKeys = ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap"] as const;
           for (const m of list) {
-            if (m instanceof THREE.MeshBasicMaterial && m.map) m.map.dispose();
+            const textures = m as unknown as Record<string, THREE.Texture | undefined>;
+            for (const key of mapKeys) textures[key]?.dispose();
             m.dispose();
           }
         }

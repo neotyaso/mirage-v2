@@ -282,6 +282,22 @@
 - **制限 / 次の設計課題**: MC は出力専用、判断は8小節ごとのテキストプロンプト、`nextBar` の量子化は未実装、音楽はシンセ2曲。`shortcut: MCは8小節ごとのテキストプロンプトで判断, 観客・カメラ入力とnextBar量子化が入ったら再設計`
 
 
+## D-024 ダンス身体は Mixamo の人間キャラ＋モーションキャプチャに置き換える
+
+- **決定**: 2026-11-12、`RobotExpressive.glb` と手続きダンス層をステージから外し、Mixamo の **Michelle**（Three.js examples 由来）＋ Mixamo のダンスクリップ（`Robot_Hip_Hop_Dance` / `Breakdance_Uprock` / `Jazz_Dancing` / `House_Dancing`）に置き換える。クリップは `src/dance/mixamo.ts` で読み込み、`AnimationMixer` で再生する。`Idle` / `Walking` も Mixamo のクリップ。再生速度は曲の BPM とクリップ本来の BPM の比で調整する（0.8〜1.25 にクランプ）。横方向の Hips ルートモーションは 0 にしてステージ中央で踊らせる。
+- **理由**:
+  - ロボット＋手続き層は、クリップとサイン波が関節で喧嘩して浮く・捻れる・首が抜ける問題が残った。モーションキャプチャのクリップ主体にすると、接地・重心・振付の説得力が一気に上がる。
+  - Mixamo は標準 65 ボーンでクリップ同士が互換。キャラクターを差し替えてもアニメーションを再利用できる。
+  - `Michelle` は Three.js examples に含まれ、Mixamo の標準リグ・テクスチャ付きで、ステージのネオン／黒背景に合う。
+- **不採用案**:
+  - (a) ロボットのまま手続き層を改善 → 根本のリグ（足が別ボーン）と見た目の限界が残る。
+  - (b) Avaturn のリアルなアバター＋単発ダンス → 見た目はリアルだが、ダンスがフロア主体でステージ向きでなく、クリップも1本しかない。
+  - (c) Mixamo のキャラだけ差し替えて手続き層を残す → 二重駆動の問題が残る。
+- **影響**:
+  - `src/dance/DanceStage.tsx` は Mixamo ローダー＋`AnimationMixer` に変更。`src/dance/dance.ts` の手続きサンプラーはステージから未使用（型・スタイル検証・`mergeDanceCue` は MC 用に残す）。
+  - アセットは `public/models/mixamo/`。出典・ライセンスは同ディレクトリの `README.md`。`scripts/test-mixamo.mjs` で GLB の存在・アニメーション・スキンを確認する。
+  - 表情・リップシンク・Retargeter は未着手。Mixamo 標準リグなので、将来 VRM/生成モーションへ移すときも `MotionSource` の差し替え点を維持する。
+
 ## 決定の変更手順
 
 1. 新しい決定をここへ追記（ID 採番、日付つき）

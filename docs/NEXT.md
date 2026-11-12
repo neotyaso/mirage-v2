@@ -1,19 +1,19 @@
 # 再開メモ（mirage-v2 / AI DJ）
 
-> 最終更新: 2026-11-08
+> 最終更新: 2026-11-12
 > ブランチ: `ai-dj`
 > 現在の本線: **AI DJ / 3Dパフォーマー**（D-023）。レセプションは退役し、旧要件は `docs/legacy/` にアーカイブ。
 
 ## 今どこにいるか
 
 - `/` が AI DJ ステージ。`dance.html` は互換エイリアス。
-- `ShowAction` / `ShowState`、2曲（NEON DRIVE / PULSE）、停止フェード、ダッキング、拍位相、BPM 同期、歩行、ダンス核、Gemini Live MC が動く。
-- ダンス核は `src/dance/dance.ts`。base groove に小節ごとの atom を重ね、style（cute / cool / hype / chill）と moves を LLM の `dance` ツールから指定する。
-- ダンス核の純関数テスト `scripts/test-dance.mjs` を追加。`pnpm test` でトラッキングと一緒に走る。
-- MC は出力専用（`capture:false`）。8小節ごとに `buildMcPrompt` を送り、必要なときだけ話す／ツールを呼ぶ。
-- Studio の `/api/live/token` で短命トークンを発行。Studio が無い場合は MC OFFLINE でステージは動く。
+- 身体は **Mixamo の Michelle ＋ モーションキャプチャのダンスクリップ**。`src/dance/mixamo.ts` が読み込み・BPM 追従・クロスフェード・接地正規化を持つ。`RobotExpressive.glb` と手続きダンス層はステージから外した。
+- `ShowAction` / `ShowState`、2曲（NEON DRIVE / PULSE）、停止フェード、ダッキング、拍位相、BPM 同期、歩行が動く。
+- ダンスクリップは `Robot_Hip_Hop_Dance`（hype）/ `Breakdance_Uprock`（cool）/ `Jazz_Dancing`（cute）/ `House_Dancing`（chill）。`src/dance/dance.ts` の手続きサンプラーは未使用で、style/moves の型と `mergeDanceCue` だけ MC ツール用に残している。
+- `scripts/test-mixamo.mjs` で GLB の存在・アニメーション・スキンを確認。`scripts/test-dance.mjs` は旧手続き核のテストとして残っている。
+- Gemini Live MC は現在**接続していない**。`useGeminiLive` とツールは残しているが、`startSession` から `connect()` しない。ステージはダンスのみ。
 - レセプションの会話 UI・2D キャラ・会話フローは削除済み。カメラ／表情／トラッキング／Studio 基盤は再利用資産として残している。
-- 生成 special、本物の曲、観客入力、`nextBar` 量子化、リップシンクは未着手。
+- 生成 special、本物の曲、観客入力、`nextBar` 量子化、表情・リップシンクは未着手。
 
 ## 次にやること
 
@@ -21,7 +21,7 @@
 2. **DJ-9 残り** — `ShowState` / `ShowAction` / BPM 同期 / キュー計算を純関数に切り出してテストする。CI、30分稼働、latency、MC の発話回数を計測する。
 3. **DJ-7 観客入力** — `useFaceDetection` の人数・表情を Director のプロンプトへ渡す。カメラなしでも動くようにする。
 4. **DJ-6 MotionSource＋生成 special** — `ClipMotionSource` / `ProceduralMotionSource` を切り、生成モデルを1つ選んでサビだけ A/B する。
-5. **DJ-10 キャラクター** — ロボット / VRM / 3D猫を決め、Retargeter・表情・リップシンクを入れる。
+5. **DJ-10 表情・リップシンク** — Mixamo Michelle は導入済み。表情・視線・Retargeter を入れる。
 
 ## 読む順（AI エージェント向け）
 
@@ -48,9 +48,12 @@
 
 ## 直近の作業ログ
 
+- 2026-11-12: ステージの身体を **Mixamo の Michelle＋モーションキャプチャのダンス**へ置き換え。`RobotExpressive.glb` と手続きダンス層をステージから外し、`src/dance/mixamo.ts` で BPM 追従・クロスフェード・接地正規化・横方向ルートモーション除去を実装。`public/models/mixamo/` に出典を記録し、`scripts/test-mixamo.mjs` を追加。ヘッドレス Chrome でダンス中の見た目と JS エラーなしを確認。
 - 2026-11-08: ダンス核を実装。`src/dance/dance.ts` に base groove＋8 atom＋4 style の純関数を置き、`DanceStage.tsx` から GLTF の sanitize 済みボーンへ加算。Gemini の `dance` ツールに style / moves を追加。`scripts/test-dance.mjs` と `pnpm test` を追加し、ヘッドレス Chrome で腕・腰・spin の反映を確認。
 - 2026-11-08: `ai-dj` ブランチを作成。`/` を AI DJ ステージへ切り替え。README / requirements / roadmap / NEXT を AI DJ 本線に書き換え、旧 requirements / roadmap を `docs/legacy/` にアーカイブ。レセプションの会話 UI・2D キャラ・会話フローを削除し、カメラ／表情／トラッキング／Studio 基盤を再利用資産として残した。D-022 を本線化し、D-023 を追加。
 - 2026-11-06: AI DJ スパイク。ShowAction、MusicTransport、歩行、プロシージャル身体、Gemini Live MC/Director を接続。8小節 MC、6ツール、ミュート、モバイル UI を実装。
+
+> 以下はロボット＋手続き層だった頃の改善メモ。2026-11-12 に Mixamo のモーションキャプチャへ置き換え済み。現在のダンスはクリップ主体で、このメモの「二重駆動をやめる」「足を固定する」は解消済み。
 
 ダンスの「精度」は、たぶん2つに分けた方がいいです。
 1. 拍との精度（ズレない）：BPM/拍グリッドでほぼ解決済み  

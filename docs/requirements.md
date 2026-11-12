@@ -44,16 +44,16 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | 項目 | 現状 | 実装箇所 |
 | --- | --- | --- |
 | エントリ | `/` が AI DJ ステージ。`/dance.html` は互換エイリアス | `index.html` / `dance.html` / `src/dance/main.tsx` |
-| 3D ステージ | Three.js、ロボット、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
+| 3D ステージ | Three.js、Mixamo の人間キャラ、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
 | 公演状態 | `ShowAction` / `ShowState`、2曲、ステージマーク | `src/dance/show.ts` |
 | 音楽 | Web Audio シンセ2曲、停止フェード、ダッキング、拍位相、BPM | `src/dance/audio.ts` |
-| 身体 | クリップ再生＋拍同期の base groove＋小節ごとの atom。style / moves / energy を Director から指定 | `src/dance/dance.ts` / `src/dance/DanceStage.tsx` |
+| 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。style ごとにクリップを選び、BPM に `timeScale` を合わせる | `src/dance/mixamo.ts` / `src/dance/DanceStage.tsx` |
 | 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `src/dance/DanceStage.tsx` |
-| MC / Director | Gemini Live の出力専用セッション、DJ 人格、8小節ごとの判断、ツール実行 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
+| MC / Director | Gemini Live のコードは残るが、現在は未接続（ダンスのみ）。DJ 人格・8小節ごとの判断・ツール実行は休眠 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
 | 観客入力 | 未接続。カメラ・表情・トラッキングの資産は残している | `src/hooks/useFaceDetection.ts` / `src/vision/expression.ts` / `src/tracking/` |
 | Studio | Live 短命トークン、検索・天気・vision の API 中継 | `studio/app/api/` |
 | 生成 special | 未着手 | — |
-| テスト | トラッキングの自己テストのみ。DJ の純関数テストは未整備 | `scripts/test-tracking.mjs` |
+| テスト | トラッキング、Mixamo GLB、旧ダンス核の自己テスト | `scripts/test-tracking.mjs` / `scripts/test-mixamo.mjs` / `scripts/test-dance.mjs` |
 
 ## 3. 機能要件
 
@@ -82,20 +82,18 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 | レイヤー | 役割 | 音楽依存 |
 | --- | --- | --- |
-| Locomotion | 歩く・立つ・向き直る・マークへ移動 | なし |
-| Dance | 音楽に合わせた全身ダンス | あり |
-| Gesture | 手振り・うなずき・指差し・ガッツポーズ | なし |
-| Face | 表情・視線・リップシンク | なし |
+| Locomotion | Mixamo の `Walking` とルート移動で歩く・向き直る | なし |
+| Dance | Mixamo のモーションキャプチャ（hype / cool / cute / chill） | あり |
+| Gesture | MC 用のジェスチャーは休止中 | なし |
+| Face | 表情・視線・リップシンクは未実装 | なし |
 
-- モーションは **90%: atom＋procedural**、**10%: 生成 special** を目標にする。
-- procedural は拍同期の bounce / sway / hip / head を常時生成する。
-- atom は小節ごとに切り替わる短い部品（bounce / sway / stepTouch / armWave / point / spin / pose / headNod）。完成振付ではない。
-- `dance` の style（cute / cool / hype / chill）、moves、energy 0..1 を身体へ反映する。
-- ダンス姿勢の計算は `src/dance/dance.ts` の純関数に置き、Three.js と分離する。
-- クリップは `AnimationAction.timeScale = bpm / 112` で曲に合わせる。
-- 歩行はダンスの atom で済ませない。音楽が止まった後も自然に動けるよう Locomotion を独立させる。
-- 生成モデルは `MotionSource` の裏に隠し、後から差し替え可能にする。
-- **既知の制限**: 歩行は直線移動＋到着後の向き直しのみ。ダンスは手続き的な stylized motion で、足の接地・足滑り補正・障害物回避は未実装。
+- 現在は **モーションキャプチャのクリップ主体**。旧 `dance.ts` の procedural サンプラーはステージから未使用（MC ツール用の型・検証だけ残す）。
+- style はクリップに対応する: hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`。
+- BPM 同期は `AnimationAction.timeScale = bpm / クリップ本来のBPM`（0.8〜1.25 にクランプ）。
+- 横方向の Hips ルートモーションは 0 にして、ステージ中央で踊らせる。上下のバウンスはクリップに任せる。
+- 歩行は `Walking` クリップ＋ルート移動。到着後は Dance / Idle へ戻る。
+- 生成モデルは将来 `MotionSource` の裏に隠し、後から差し替え可能にする。
+- **既知の制限**: 歩行は直線移動＋到着後の向き直しのみ。ダンスの足は読み込み時に接地を正規化するが、クリップごとの足滑り補正・障害物回避・表情・ジェスチャーは未実装。
 
 ### 3-4. MC / Voice
 
@@ -190,11 +188,22 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | `src/vision/expression.ts` | 表情スコアの解釈 |
 | `src/tracking/` | 通行人トラッキングとイベントログ（再利用資産） |
 | `studio/app/api/live/token/route.ts` | Live 用短命トークン |
-| `public/models/RobotExpressive.glb` | 仮ロボット（CC0: Tomás Laulhé / Don McCurdy） |
+| `public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは同ディレクトリの README） |
 
 ## 6. 完了条件（DoD）
 
-### 現在の本線（2026-11-08）
+### 現在の本線（2026-11-12）
+
+- [x] `/` で AI DJ ステージが起動する。
+- [x] Mixamo の Michelle がステージ中央に立ち、足が床に接地している。
+- [x] 4 style の Mixamo ダンスクリップが BPM に追従してループする。
+- [x] 曲停止で Idle、歩行で Walking、到着後に Dance / Idle へ戻る。
+- [x] Mixamo アセットの出典・ライセンスを記録した。
+- [x] `pnpm build` と `pnpm test` が通る。
+- [ ] 本物の曲と `nextBar` 量子化。
+- [ ] 表情・リップシンク・ジェスチャー。
+
+### 前のマイルストーン（2026-11-08 / 履歴）
 
 - [x] `/` で AI DJ ステージが起動する。
 - [x] `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` が動く。
@@ -238,9 +247,10 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### DJ-10 キャラクター
 
-- [ ] ロボットのまま / VRM / 3D猫のどれかに決める。
-- [ ] Retargeter を調整する。
-- [ ] 表情・視線を追加する。
+- [x] Mixamo の Michelle＋モーションキャプチャのダンスに決める。
+- [x] 標準 Mixamo リグのクリップをそのまま再生できる。
+- [ ] Retargeter を調整する（VRM / 生成モーションへ移すとき）。
+- [ ] 表情・視線・リップシンクを追加する。
 
 ## 7. 未確定の項目
 
@@ -249,7 +259,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | MC の判断周期 | 8小節のままか、4小節・1小節へ短くするか | 観客入力と nextBar の実装時 |
 | 生成モデル | TM2D / FlowerDance / EDGE のどれか | DJ-6 |
 | 音楽 | シンセのままか、CC0 か、生成音楽か | DJ-8 |
-| キャラクター | ロボット / VRM / 3D猫 | DJ-10 |
+| キャラクター | Mixamo Michelle に決定。表情・視線の実装方法が未定 | DJ-10 |
 | 観客入力の重み | 人数・表情・動きをどう energy に変換するか | DJ-7 |
 | 音響 | スピーカーとマイクの回り込みをどう避けるか | 実機試験 |
 | 90/10 の比率 | 最初の実測で見直す | 生成 special の A/B 後 |

@@ -1,6 +1,6 @@
 # mirage-v2 — AI DJ / 3Dパフォーマー
 
-LLM が公演の流れを考え、3D キャラクターが音楽に合わせて踊り、MC として話す **AI DJ**。
+3D キャラクターが音楽に合わせて踊る **AI DJ ステージ**。LLM が公演の流れを考える設計だが、現在はダンス主体で MC は休止中。
 Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTransport）・身体（モーションエンジン）を別の時計で動かす** ことを核にしている。
 
 > 2026-11-08 にレセプション本線を退役し、AI DJ 本線へ切り替えた（[docs/decisions.md](docs/decisions.md) D-023）。
@@ -8,15 +8,15 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 
 ## 何が動くか
 
-- 3D ロボットのダンス、歩行、ジェスチャー（Three.js）
+- Mixamo の人間キャラ（Michelle）＋モーションキャプチャのダンス、歩行（Three.js）
 - 2曲の Web Audio シンセ（NEON DRIVE 112 BPM / PULSE 128 BPM）
 - BPM 同期、停止フェード、発話ダッキング、拍位相
-- Gemini Live の DJ 人格 MC（出力専用。マイクは開かない）
-- LLM のツールから `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` を実行
-- 拍同期のダンス核（base groove＋小節ごとの atom、4 style / 8 moves）＋クリップ
-- MC パネル、モード／曲／BPM／小節、クイック操作、MC・音楽ミュート、モバイル対応
+- Gemini Live の DJ 人格 MC（コードは残るが現在は未接続）
+- LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残るが、MC 接続は休止中
+- 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
+- MIRAGE ヘッダー、モード／曲／BPM／小節の readout、SOUND ON / OFF、モバイル対応
 
-**公演の1巡**: ダンス → 音楽停止 → トーク → 歩行 → 次の曲 → ダンス。
+**公演の1巡**: ダンス → 音楽停止 → 歩行 → 次の曲 → ダンス。
 
 ## 起動
 
@@ -95,23 +95,22 @@ mirage-v2/
 
 ```bash
 pnpm build       # tsc --noEmit && vite build
-pnpm test        # トラッキング＋ダンス核の自己テスト
+pnpm test        # トラッキング＋Mixamo アセット＋旧ダンス核の自己テスト
 ```
 
-ダンス核のテストは `scripts/test-dance.mjs`。拍・小節・style・atom・energy をブラウザ無しで検証する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
+Mixamo アセットのテストは `scripts/test-mixamo.mjs`（GLB の存在・アニメーション・スキン）。旧ダンス核のテストは `scripts/test-dance.mjs`。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
 
 ## 展示前チェックリスト
 
 1. `pnpm build` が通る。
 2. `/` で 3D ステージが起動する。
-3. 「踊って」で音楽とダンスが始まる。style / moves を変えると振付の方向が変わる。
-4. 「止めて」で音楽がフェードし、身体が Idle に戻る。
-5. 「歩いて」でマークへ移動し、到着後に Idle / Dance へ戻る。
-6. 「次の曲」で曲が切り替わる。
-7. 「話して」で MC が話し、音楽がダッキングされる。
-8. Studio を止めてもステージ操作が動く（MC OFFLINE）。
-9. モバイル幅で UI が崩れない。
-10. 長時間動かしてメモリ・音切れ・タイマーのリークがない。
+3. 「START SESSION」で音楽とダンスが始まる。
+4. キャラクターが床に接地し、BPM に合わせてダンスがループする。
+5. SOUND ON / OFF が効く。
+6. デスクトップと縦長画面でキャラクターが画面内に収まる。
+7. MC は休止中。MC 字幕は出ず、ステージはダンスのみで動く。
+8. モバイル幅で UI が崩れない。
+9. 長時間動かしてメモリ・音切れ・タイマーのリークがない。
 
 ## ドキュメント
 

@@ -25,14 +25,22 @@
 | DJ-0 | 本線切替・レセプション退役・ドキュメント再編 | 完了 | — | `/` が DJ。旧要件を `docs/legacy/` に保管。受付 UI を削除 |
 | DJ-1 | ショー状態機械（ShowAction / ShowState） | 完了 | — | dance / stop / play / walk / talk / gesture が動く |
 | DJ-2 | MusicTransport（2曲・BPM・停止・ダッキング・拍位相） | 完了 | — | 曲停止・変更で身体が止まらない |
-| DJ-3 | 身体（ダンス核＋クリップ＋歩行） | 完了 | DJ-1, DJ-2 | 拍同期の base groove＋小節ごとの atom。style / moves / energy。マークへ歩く |
+| DJ-3 | 身体（Mixamo ダンス＋歩行） | 完了 | DJ-1, DJ-2 | Mixamo の人間キャラ＋モーションキャプチャのダンスを BPM に合わせて再生。マークへ歩く |
 | DJ-4 | Gemini Live MC / Director | 完了 | DJ-1, DJ-2, DJ-3 | 8小節ごとに判断し、ツールで舞台を操作する |
 | DJ-5 | ステージ UI（MC パネル・状態・操作・ミュート） | 完了 | DJ-1〜4 | デスクトップ／モバイルで操作できる |
 | DJ-6 | MotionSource 抽象化＋生成 special | 未着手 | DJ-3 | クリップ／プロシージャル／生成を差し替え可能。失敗時は atom に落ちる |
 | DJ-7 | 観客入力（人数・表情・動き） | 未着手 | DJ-4 | Director が観客入力を使う。落ちても公演は続く |
 | DJ-8 | 音楽・キュー・リップシンク | 未着手 | DJ-2, DJ-4 | 本物の曲、`nextBar` 量子化、口パク |
 | DJ-9 | 品質・テスト・計測 | 進行中 | 各機能 | 純関数テスト、`pnpm test`、CI、30分稼働、latency 計測 |
-| DJ-10 | キャラクター / Retargeter | 未着手 | DJ-3, DJ-6 | ロボット / VRM / 3D猫を1つに決め、表情・視線を入れる |
+| DJ-10 | キャラクター / Retargeter | 進行中 | DJ-3, DJ-6 | Mixamo Michelle＋ダンス導入済み。表情・視線・リップシンクが残り |
+
+## 実装済み（2026-11-12）
+
+- ステージの身体を **Mixamo の Michelle＋モーションキャプチャのダンス**に置き換え。`RobotExpressive.glb` と手続きダンス層はステージから外した。
+- `src/dance/mixamo.ts` に Mixamo の読み込み・足の接地正規化・横方向ルートモーション除去・BPM 追従の `timeScale` を実装。
+- ダンスクリップは hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`。
+- 黒ステージ用のフロント光、人間の肌・布がブルームで飛ばないマテリアル調整、カメラ距離の調整。
+- アセットの出典とライセンスを `public/models/mixamo/README.md` に記録。`scripts/test-mixamo.mjs` で GLB を検査。
 
 ## 実装済み（2026-11-08）
 
@@ -58,8 +66,8 @@
         └ 人数・表情を Director に渡し、MC と energy を変える
 [次]  DJ-6 MotionSource＋生成 special
         └ 90/10 の10%をソケット化。失敗時は atom
-[次]  DJ-10 キャラクター
-        └ Retargeter・表情・リップシンク
+[次]  DJ-10 表情・リップシンク
+        └ Mixamo Michelle 導入済み。表情・視線・Retargeter
 [並行] DJ-9 計測・CI
 [終]  通し品質（30分・曲停止/変更・MC の喋りすぎ・実機音響）
 ```
@@ -70,7 +78,7 @@
 - **nextBar を先に**: 曲変更とダンス開始が小節頭に合わないと、Director が判断しても公演が素人っぽく聴こえる。
 - **観客入力を次に**: 「LLMが考えてリアルタイムで踊る」の入力側。人数・表情が入ると、8小節固定の MC から判断らしくなる。
 - **生成 special は後**: 90% の土台が安定してから。先に入れると、遅延・失敗で公演が止まる。
-- **キャラクターは最後**: ロボットで動きと音の品質を固める。モデル変更は Retargeter の仕事。
+- **キャラクターは動きの土台が固まってから**: Mixamo Michelle で人間の身体と接地は確保済み。表情・リップシンクは音とキューの後。
 
 ## 直近のタスク
 
