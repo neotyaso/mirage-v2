@@ -26,7 +26,7 @@
 | DJ-1 | ショー状態機械（ShowAction / ShowState） | 完了 | — | dance / stop / play / walk / talk / gesture が動く |
 | DJ-2 | MusicTransport（2曲・BPM・停止・ダッキング・拍位相） | 完了 | — | 曲停止・変更で身体が止まらない |
 | DJ-3 | 身体（Mixamo ダンス＋歩行） | 完了 | DJ-1, DJ-2 | Mixamo の人間キャラ＋モーションキャプチャのダンスを BPM に合わせて再生。マークへ歩く |
-| DJ-4 | Gemini Live MC / Director | 完了 | DJ-1, DJ-2, DJ-3 | 8小節ごとに判断し、ツールで舞台を操作する |
+| DJ-4 | Gemini Live MC / Director | 休止中 | DJ-1, DJ-2, DJ-3 | コードは残るが現在は接続しない。ダンスのみで公演する |
 | DJ-5 | ステージ UI（MC パネル・状態・操作・ミュート） | 完了 | DJ-1〜4 | デスクトップ／モバイルで操作できる |
 | DJ-6 | MotionSource 抽象化＋生成 special | 未着手 | DJ-3 | クリップ／プロシージャル／生成を差し替え可能。失敗時は atom に落ちる |
 | DJ-7 | 観客入力（人数・表情・動き） | 未着手 | DJ-4 | Director が観客入力を使う。落ちても公演は続く |
