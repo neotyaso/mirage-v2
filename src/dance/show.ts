@@ -1,24 +1,14 @@
 import type { DanceMove, DanceStyle } from "./dance";
 
 export type ShowMode = "idle" | "walk" | "talk" | "dance";
-export type TrackId = "neon" | "pulse";
+export type TrackId = "neon";
 export type MarkId = "center" | "left" | "right" | "front";
 
-export const TRACKS: Record<
-  TrackId,
-  { name: string; bpm: number; bass: number[]; chords: [number, number] }
-> = {
+export const TRACKS: Record<TrackId, { name: string; bpm: number; file: string }> = {
   neon: {
-    name: "NEON DRIVE",
-    bpm: 112,
-    bass: [55, 55, 65.41, 49, 55, 55, 73.42, 65.41],
-    chords: [220, 261.63],
-  },
-  pulse: {
-    name: "PULSE",
-    bpm: 128,
-    bass: [49, 49, 58.27, 43.65, 49, 49, 65.41, 58.27],
-    chords: [196, 246.94],
+    name: "DANCE ELECTRO",
+    bpm: 120,
+    file: "/audio/dance-electro-120.mp3",
   },
 };
 
@@ -55,7 +45,3 @@ export type ShowAction =
   | { type: "talk" }
   | { type: "gesture"; intent: "wave" | "nod" | "point" | "celebrate" }
   | { type: "setClip"; clip: string };
-
-export function nextTrack(id: TrackId): TrackId {
-  return id === "neon" ? "pulse" : "neon";
-}

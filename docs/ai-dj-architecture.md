@@ -2,7 +2,7 @@
 
 > 最終更新: 2026-11-12  
 > 状態: **本線**。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンスまで接続。Gemini Live MC/Director はコードを残して休止中。  
-> 現状: 音は2パターンのシンセ、身体は Mixamo の Michelle＋モーションキャプチャのダンス。生成special・本物の曲・観客入力・表情・リップシンクは未着手。  
+> 現状: 音は Pixabay の無料楽曲1曲（Dance Electro 120 bpm）、身体は Mixamo の Michelle＋モーションキャプチャのダンス。生成special・観客入力・表情・リップシンク・本格的なビート解析は未着手。  
 > 関連: 要件は [requirements.md](requirements.md)、着手順は [roadmap.md](roadmap.md)、決定は [decisions.md](decisions.md)（D-022 / D-023）。
 
 ---
@@ -182,7 +182,7 @@ interface MotionSource {
 
 ### 4.1 レイテンシ目標
 
-- LLMの判断: **1小節以内**（112 BPMなら約2.1秒）
+- LLMの判断: **1小節以内**（120 BPMなら約2.0秒）
 - 発話開始: **1小節以内**
 - 生成special: **2〜4秒先読み**。間に合わなければatom
 - フォールバック: **即時**。ステージを止めない
@@ -524,7 +524,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 - `ShowAction`（dance / stopMusic / playTrack / walkTo / talk / gesture）を `src/dance/show.ts` に定義
 - 「止めて」「歩いて」「次の曲」「話して」を実装
-- `DanceAudio` に2曲（NEON DRIVE / PULSE）、フェード停止、ダッキング、拍位相を追加
+- `DanceAudio` に無料楽曲1曲（Dance Electro 120 bpm）、フェード停止、ダッキング、拍位相を追加
 - 5シーケンスを通す: 踊る→止める→話す→歩く→次の曲で踊る
 
 ### Phase 2: MCループ（実装済み）
@@ -583,13 +583,14 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 | --- | --- |
 | `index.html` | 3Dステージのエントリ（`/`）。`dance.html` は互換エイリアス |
 | `src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、Mixamo の再生、UI |
-| `src/dance/show.ts` | `ShowAction` / `ShowState`、2曲、ステージマーク |
+| `src/dance/show.ts` | `ShowAction` / `ShowState`、1曲、ステージマーク |
 | `src/dance/mc.ts` | DJ用システムプロンプト、Gemini Liveツール、MCプロンプト |
-| `src/dance/audio.ts` | 2曲のWeb Audioシンセ、停止フェード、ダッキング、拍位相 |
+| `src/dance/audio.ts` | 無料楽曲1曲のWeb Audio再生、停止フェード、ダッキング、拍位相 |
 | `src/dance/mixamo.ts` | Mixamo の読み込み、接地正規化、ルートモーション除去、BPM 追従 |
 | `src/dance/dance.css` | ステージUI（MCパネル含む） |
 | `src/hooks/useGeminiLive.ts` | カスタムプロンプト／ツール／ツール実行／`capture:false`／`prompt()` を追加 |
 | `public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは README） |
+| `public/audio/` | 無料楽曲「Dance Electro 120 bpm - Full」（出典・ライセンスは README） |
 | `vite.config.ts` | `index.html` と `dance.html` をビルド入力に持つ |
 
 ### 実装メモ
@@ -605,7 +606,7 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 ### 未接続・簡易なところ
 
-- 本物の曲・ビート解析（今はシンセ2曲）
+- 本格的なビート解析（今は 120 BPM 固定の無料楽曲1曲）
 - 生成モデルと `MotionSource` 抽象化
 - 観客・カメラ入力（人数、表情、動き）
 - リップシンク、表情
@@ -630,11 +631,11 @@ MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無
 
 - キャラクター: Mixamo Michelle に決定。表情・視線の実装方法
 - 最初に試す生成モデル: TM2D / FlowerDance / EDGE
-- 音楽: シンセのまま / CC0楽曲 / 生成音楽
+- 音楽: 複数曲の運用 / 生成音楽
 - 展示の音響: スピーカー＋マイクの回り込み対策
 - 90/10の比率が本当に適切か（最初の実測で見直す）
 - MCの判断周期を8小節から短くするか（観客入力とnextBarの実装時）
-- 本物の曲をいつ入れるか（ライセンスとビート解析）
+- ビート解析をいつ入れるか（複数曲の運用とライセンス管理）
 
 ## 13. リスク
 

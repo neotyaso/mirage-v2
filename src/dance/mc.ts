@@ -50,7 +50,7 @@ export const DJ_TOOLS: FunctionDeclaration[] = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        trackId: { type: Type.STRING, description: "neon または pulse" },
+        trackId: { type: Type.STRING, description: "neon" },
       },
       required: ["trackId"],
     },

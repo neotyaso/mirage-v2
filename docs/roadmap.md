@@ -24,13 +24,13 @@
 | --- | --- | --- | --- | --- |
 | DJ-0 | 本線切替・レセプション退役・ドキュメント再編 | 完了 | — | `/` が DJ。旧要件を `docs/legacy/` に保管。受付 UI を削除 |
 | DJ-1 | ショー状態機械（ShowAction / ShowState） | 完了 | — | dance / stop / play / walk / talk / gesture が動く |
-| DJ-2 | MusicTransport（2曲・BPM・停止・ダッキング・拍位相） | 完了 | — | 曲停止・変更で身体が止まらない |
+| DJ-2 | MusicTransport（1曲・BPM・停止・ダッキング・拍位相） | 完了 | — | 曲停止・変更で身体が止まらない |
 | DJ-3 | 身体（Mixamo ダンス＋歩行） | 完了 | DJ-1, DJ-2 | Mixamo の人間キャラ＋モーションキャプチャのダンスを BPM に合わせて再生。マークへ歩く |
 | DJ-4 | Gemini Live MC / Director | 休止中 | DJ-1, DJ-2, DJ-3 | コードは残るが現在は接続しない。ダンスのみで公演する |
 | DJ-5 | ステージ UI（MC パネル・状態・操作・ミュート） | 完了 | DJ-1〜4 | デスクトップ／モバイルで操作できる |
 | DJ-6 | MotionSource 抽象化＋生成 special | 未着手 | DJ-3 | クリップ／プロシージャル／生成を差し替え可能。失敗時は atom に落ちる |
 | DJ-7 | 観客入力（人数・表情・動き） | 未着手 | DJ-4 | Director が観客入力を使う。落ちても公演は続く |
-| DJ-8 | 音楽・キュー・リップシンク | 未着手 | DJ-2, DJ-4 | 本物の曲、`nextBar` 量子化、口パク |
+| DJ-8 | 音楽・キュー・リップシンク | 進行中 | DJ-2, DJ-4 | 無料楽曲1曲は導入済み。`nextBar` 量子化、ビート解析、口パクが残り |
 | DJ-9 | 品質・テスト・計測 | 進行中 | 各機能 | 純関数テスト、`pnpm test`、CI、30分稼働、latency 計測 |
 | DJ-10 | キャラクター / Retargeter | 進行中 | DJ-3, DJ-6 | Mixamo Michelle＋ダンス導入済み。表情・視線・リップシンクが残り |
 
@@ -41,6 +41,7 @@
 - ダンスクリップは hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`。
 - 黒ステージ用のフロント光、人間の肌・布がブルームで飛ばないマテリアル調整、カメラ距離の調整。
 - アセットの出典とライセンスを `public/models/mixamo/README.md` に記録。`scripts/test-mixamo.mjs` で GLB を検査。
+- 音楽を Pixabay の無料楽曲「Dance Electro 120 bpm - Full」に差し替え。出典は `public/audio/README.md`、`scripts/test-audio.mjs` で音源を検査。
 
 ## 実装済み（2026-11-08）
 

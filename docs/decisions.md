@@ -279,7 +279,7 @@
   - `README.md` / `requirements.md` / `roadmap.md` / `NEXT.md` を AI DJ 本線に書き換え。旧 requirements / roadmap は `docs/legacy/`。
   - 受付の会話 UI・2D キャラ・会話フローを削除。カメラ／表情／トラッキング／Studio 基盤は残す。
   - D-002 / D-005 / D-010 / D-011 / D-013 / D-015〜D-017 / D-019 は DJ にそのまま適用しない（各項目に注記）。
-- **制限 / 次の設計課題**: MC は出力専用、判断は8小節ごとのテキストプロンプト、`nextBar` の量子化は未実装、音楽はシンセ2曲。`shortcut: MCは8小節ごとのテキストプロンプトで判断, 観客・カメラ入力とnextBar量子化が入ったら再設計`
+- **制限 / 次の設計課題**: MC は出力専用、判断は8小節ごとのテキストプロンプト、`nextBar` の量子化は未実装、音楽は当時シンセ2曲（D-025 で無料楽曲1曲に変更）。`shortcut: MCは8小節ごとのテキストプロンプトで判断, 観客・カメラ入力とnextBar量子化が入ったら再設計`
 
 
 ## D-024 ダンス身体は Mixamo の人間キャラ＋モーションキャプチャに置き換える
@@ -297,6 +297,23 @@
   - `src/dance/DanceStage.tsx` は Mixamo ローダー＋`AnimationMixer` に変更。`src/dance/dance.ts` の手続きサンプラーはステージから未使用（型・スタイル検証・`mergeDanceCue` は MC 用に残す）。
   - アセットは `public/models/mixamo/`。出典・ライセンスは同ディレクトリの `README.md`。`scripts/test-mixamo.mjs` で GLB の存在・アニメーション・スキンを確認する。
   - 表情・リップシンク・Retargeter は未着手。Mixamo 標準リグなので、将来 VRM/生成モーションへ移すときも `MotionSource` の差し替え点を維持する。
+
+## D-025 ステージ音楽を無料楽曲1曲の再生に差し替える
+
+- **決定**: 2026-11-12、Web Audio シンセ2曲（NEON DRIVE / PULSE）をやめ、Pixabay の無料楽曲 **「Dance Electro 120 bpm - Full」（LiteSaturation）** を `public/audio/dance-electro-120.mp3` に同梱して再生する。`DanceAudio` は `AudioBufferSourceNode` でループ再生し、120 BPM の拍グリッドから `onBeat` / `onBar` / 位相を作る。曲停止は従来どおり小節フェード、発話中はダッキングする。
+- **理由**:
+  - シンセのループは仮置きで、ステージの聴感がデモ品質に届かなかった。完成した楽曲の方がダンスの説得力を上げられる。
+  - Pixabay Content License はアプリへの同梱利用が無料で、クレジットも任意。音源そのものの再配布・販売はしない。
+  - 既存の `MusicTransport`（BPM・拍位相・フェード・ダッキング）をそのまま使え、変更が音源の差し替えに収まる。
+- **不採用案**:
+  - (a) シンセを追加して作り込む → 作曲・ミックスまでの品質を出すには別の作業量が必要。
+  - (b) 外部ストリーミング API を使う → API キー／ネットワーク依存が増え、オフライン展示が止まる。
+  - (c) CC0 のループ素材を組む → 曲としての構成が弱く、ビートグリッドも不安定になりやすい。
+- **影響**:
+  - `src/dance/show.ts` は1曲（`neon`）のメタデータ（名前・BPM・ファイル）を持つ。`TrackId` は `"neon"` のみ。
+  - `src/dance/audio.ts` は MP3 の fetch／decode／ループ再生に変更。`setBpm` は再生速度（`playbackRate`）で追従するため、大きく変えるとピッチも動く。
+  - 出典・ライセンスは `public/audio/README.md`、`scripts/test-audio.mjs` で存在を検査する。
+- **制限 / 次の設計課題**: ビートグリッドは 120 BPM 固定で、先頭の拍オフセットは 0 とみなしている。実音に合わせた微調整と `nextBar` 量子化は DJ-8 で行う。`shortcut: 120 BPM 固定・先頭拍0で再生, 実音のビート解析とnextBar量子化が入ったら再設計`
 
 ## 決定の変更手順
 

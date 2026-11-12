@@ -22,7 +22,6 @@ import { DJ_SYSTEM_PROMPT, DJ_TOOLS, buildMcPrompt } from "./mc";
 import {
   MARKS,
   TRACKS,
-  nextTrack,
   type MarkId,
   type ShowAction,
   type ShowMode,
@@ -178,7 +177,7 @@ export function DanceStage() {
         case "play_track":
           applyAction({
             type: "playTrack",
-            trackId: args.trackId === "pulse" ? "pulse" : "neon",
+            trackId: "neon",
           });
           break;
         case "walk":

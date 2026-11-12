@@ -9,14 +9,14 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 ## 何が動くか
 
 - Mixamo の人間キャラ（Michelle）＋モーションキャプチャのダンス、歩行（Three.js）
-- 2曲の Web Audio シンセ（NEON DRIVE 112 BPM / PULSE 128 BPM）
+- Pixabay の無料楽曲「Dance Electro 120 bpm - Full」（120 BPM、LiteSaturation）
 - BPM 同期、停止フェード、発話ダッキング、拍位相
 - Gemini Live の DJ 人格 MC（コードは残るが現在は未接続）
 - LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残るが、MC 接続は休止中
 - 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
 - MIRAGE ヘッダー、モード／曲／BPM／小節の readout、SOUND ON / OFF、モバイル対応
 
-**公演の1巡**: ダンス → 音楽停止 → 歩行 → 次の曲 → ダンス。
+**公演の1巡**: ダンス → 音楽停止 → 歩行 → 曲を頭から再開 → ダンス。
 
 ## 起動
 

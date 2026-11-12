@@ -24,7 +24,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 ### 1.2 今回のスコープ
 
 - 1ステージ・1体の 3D キャラクター。
-- 2曲のシンセ音源（NEON DRIVE / PULSE）と BPM 同期。
+- 無料楽曲1曲（Dance Electro 120 bpm / Pixabay）と BPM 同期。
 - ダンス、停止、曲変更、歩行、トーク、ジェスチャーの公演アクション。
 - Gemini Live による日本語 MC（出力専用）。
 - デスクトップ／モバイルのステージ UI。
@@ -35,7 +35,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - LLM が毎フレーム関節角度を出すこと。
 - 完成した振付を大量に持って、その中から選ぶだけの構成。
 - 映像生成モデルを 3D ステージに直接混ぜること。
-- 本物の楽曲ライセンス、複数ステージ、複数キャラクターの同時運用。
+- 複数曲のライセンス管理、本格的なビート解析、複数ステージ、複数キャラクターの同時運用。
 - AI の長期記憶・来場者アカウント（D-012）。
 - レセプション UI の復活。
 
@@ -45,8 +45,8 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | --- | --- | --- |
 | エントリ | `/` が AI DJ ステージ。`/dance.html` は互換エイリアス | `index.html` / `dance.html` / `src/dance/main.tsx` |
 | 3D ステージ | Three.js、Mixamo の人間キャラ、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
-| 公演状態 | `ShowAction` / `ShowState`、2曲、ステージマーク | `src/dance/show.ts` |
-| 音楽 | Web Audio シンセ2曲、停止フェード、ダッキング、拍位相、BPM | `src/dance/audio.ts` |
+| 公演状態 | `ShowAction` / `ShowState`、1曲、ステージマーク | `src/dance/show.ts` |
+| 音楽 | 無料楽曲1曲の Web Audio 再生、停止フェード、ダッキング、拍位相、BPM | `src/dance/audio.ts` |
 | 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。style ごとにクリップを選び、BPM に `timeScale` を合わせる | `src/dance/mixamo.ts` / `src/dance/DanceStage.tsx` |
 | 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `src/dance/DanceStage.tsx` |
 | MC / Director | Gemini Live のコードは残るが、現在は未接続（ダンスのみ）。DJ 人格・8小節ごとの判断・ツール実行は休眠 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
@@ -148,7 +148,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 ### 4.1 レイテンシ
 
 - 身体: 60fps を維持する。
-- LLM の判断: 1小節以内（112 BPM で約 2.1 秒）を目標。
+- LLM の判断: 1小節以内（120 BPM で約 2.0 秒）を目標。
 - 発話開始: 1小節以内を目標。
 - 生成 special: 2〜4 秒先読み。間に合わなければ atom に落とす。
 - フォールバック: 即時。ステージを止めない。
@@ -165,7 +165,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - 公演状態機械、BPM 同期、キュー量子化、Director の出力変換は純関数に分け、ブラウザ無しでテストする。
 - 外部 API（Gemini / Studio）をモックした統合テストを入れる。
 - 実機カメラ・マイクがなくてもビルドと主要ロジックを検証できるようにする。
-- 現状は `scripts/test-tracking.mjs` と `scripts/test-dance.mjs`。`pnpm test` で両方実行する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する。
+- 現状は `scripts/test-tracking.mjs`、`scripts/test-mixamo.mjs`、`scripts/test-audio.mjs`、`scripts/test-dance.mjs`。`pnpm test` で全実行する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する。
 
 ### 4.4 計測
 
@@ -180,7 +180,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | `src/dance/DanceStage.tsx` | Three.js シーン、公演状態、歩行、ボーン適用、UI、MC 接続 |
 | `src/dance/dance.ts` | ダンス核。拍・小節・style・moves から姿勢を返す純関数 |
 | `src/dance/show.ts` | `ShowAction` / `ShowState`、曲、ステージマーク |
-| `src/dance/audio.ts` | シンセ2曲、停止フェード、ダッキング、拍位相、BPM |
+| `src/dance/audio.ts` | 無料楽曲1曲の再生、停止フェード、ダッキング、拍位相、BPM |
 | `src/dance/mc.ts` | DJ プロンプト、Gemini Live ツール、MC プロンプト |
 | `src/dance/dance.css` | ステージ UI |
 | `src/hooks/useGeminiLive.ts` | Live 接続、カスタムプロンプト／ツール、`capture:false`、`prompt()`、ミュート |
@@ -258,7 +258,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | --- | --- | --- |
 | MC の判断周期 | 8小節のままか、4小節・1小節へ短くするか | 観客入力と nextBar の実装時 |
 | 生成モデル | TM2D / FlowerDance / EDGE のどれか | DJ-6 |
-| 音楽 | シンセのままか、CC0 か、生成音楽か | DJ-8 |
+| 音楽 | 複数曲の運用か、生成音楽か | DJ-8 |
 | キャラクター | Mixamo Michelle に決定。表情・視線の実装方法が未定 | DJ-10 |
 | 観客入力の重み | 人数・表情・動きをどう energy に変換するか | DJ-7 |
 | 音響 | スピーカーとマイクの回り込みをどう避けるか | 実機試験 |

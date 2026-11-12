@@ -1,20 +1,19 @@
 /**
- * ステージ用の最小ビートシンセ。
- * 音源ファイルを持たずに Web Audio だけで 4/4 のループを鳴らす。
- * 本番の music-to-dance に差し替えるまでのプレースホルダ。
+ * ステージ用の音楽トランスポート。
+ * フリー楽曲の MP3 を Web Audio で再生し、BPM から拍位相を作る。
  */
 import { TRACKS, type TrackId } from "./show";
-
-const STEPS = 16;
 
 export class DanceAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private music: GainNode | null = null;
-  private noise: AudioBuffer | null = null;
+  private source: AudioBufferSourceNode | null = null;
+  private buffer: AudioBuffer | null = null;
+  private bufferTrack: TrackId | null = null;
   private timer: number | null = null;
-  private next = 0;
-  private step = 0;
+  private nextBeatAt = 0;
+  private beatCount = 0;
   private _bpm = TRACKS.neon.bpm;
   private _muted = false;
   private _playing = false;
@@ -43,9 +42,19 @@ export class DanceAudio {
 
   setBpm(value: number) {
     if (!Number.isFinite(value)) return;
-    this._bpm = Math.min(150, Math.max(70, value));
-    this.anchor = this.ctx?.currentTime ?? 0;
-    this.anchorBpm = this._bpm;
+    const bpm = Math.min(150, Math.max(70, value));
+    this._bpm = bpm;
+    if (!this.ctx || !this.source || !this._playing) return;
+    // 楽曲は 120 BPM 固定。速度を変えるとピッチも動くが、ダンスとの同期を優先する。
+    const now = this.ctx.currentTime;
+    const oldBeats = Math.max(0, ((now - this.anchor) * this.anchorBpm) / 60);
+    const phase = oldBeats % 1;
+    const natural = TRACKS[this._track].bpm;
+    this.source.playbackRate.setTargetAtTime(bpm / natural, now, 0.05);
+    this.anchor = now - (phase * 60) / bpm;
+    this.anchorBpm = bpm;
+    this.nextBeatAt = now + ((1 - phase) * 60) / bpm;
+    this.beatCount = (Math.floor(oldBeats) + 1) % 4;
   }
 
   setMuted(muted: boolean) {
@@ -75,19 +84,47 @@ export class DanceAudio {
       this.music = this.ctx.createGain();
       this.music.gain.value = 0;
       this.master.connect(this.music).connect(this.ctx.destination);
-      this.noise = this.makeNoise(this.ctx);
     }
     await this.ctx.resume();
     // stop() が await 中に呼ばれたら、この start は諦める
     if (myGen !== this.gen) return;
+
+    try {
+      if (!this.buffer || this.bufferTrack !== this._track) {
+        const response = await fetch(TRACKS[this._track].file);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        this.buffer = await this.ctx.decodeAudioData(await response.arrayBuffer());
+        this.bufferTrack = this._track;
+      }
+    } catch (error) {
+      console.error("AUDIO load failed", error);
+      return;
+    }
+    if (myGen !== this.gen) return;
+
+    this.stopSource();
+    const startAt = this.ctx.currentTime + 0.08;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.buffer;
+    source.loop = true;
+    source.loopStart = 0;
+    // ループ末尾の MP3 パディングを拍境界で切って、周回ごとのズレを防ぐ
+    const naturalBeat = 60 / TRACKS[this._track].bpm;
+    const loopEnd = Math.min(this.buffer.duration, Math.round(this.buffer.duration / naturalBeat) * naturalBeat);
+    source.loopEnd = Math.max(naturalBeat * 4, loopEnd);
+    source.playbackRate.value = this._bpm / TRACKS[this._track].bpm;
+    source.connect(this.music!);
+    source.start(startAt);
+    this.source = source;
+
     this._playing = true;
     this.music?.gain.cancelScheduledValues(this.ctx.currentTime);
     this.music?.gain.setTargetAtTime(this._ducked ? 0.28 : 1, this.ctx.currentTime, 0.06);
-    this.next = this.ctx.currentTime + 0.08;
-    this.anchor = this.next;
+    this.anchor = startAt;
     this.anchorBpm = this._bpm;
-    this.step = 0;
-    if (this.timer === null) this.timer = window.setInterval(() => this.schedule(), 25);
+    this.nextBeatAt = startAt;
+    this.beatCount = 0;
+    if (this.timer === null) this.timer = window.setInterval(() => this.tick(), 25);
   }
 
   /** 曲を止める。fadeBars は 4/4 の小節数。 */
@@ -103,6 +140,18 @@ export class DanceAudio {
     this.music.gain.linearRampToValueAtTime(0, now + fade);
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+    const source = this.source;
+    if (source) {
+      try {
+        source.stop(now + fade);
+      } catch {
+        /* already stopped */
+      }
+      window.setTimeout(() => {
+        source.disconnect();
+        if (this.source === source) this.source = null;
+      }, (fade + 0.1) * 1000);
+    }
   }
 
   async playTrack(trackId: TrackId) {
@@ -130,120 +179,36 @@ export class DanceAudio {
     this.gen++;
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+    this.stopSource();
     this.ctx?.close();
     this.ctx = null;
   }
 
-  private makeNoise(ctx: AudioContext) {
-    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    return buffer;
+  private stopSource() {
+    const source = this.source;
+    this.source = null;
+    if (!source) return;
+    try {
+      source.stop();
+    } catch {
+      /* already stopped */
+    }
+    source.disconnect();
   }
 
-  private schedule() {
+  private tick() {
     if (!this.ctx || !this._playing) return;
-    while (this.next < this.ctx.currentTime + 0.12) {
-      this.playStep(this.step, this.next);
-      this.next += 60 / this._bpm / 4;
-      this.step = (this.step + 1) % STEPS;
-    }
-  }
-
-  private playStep(step: number, time: number) {
-    if (!this.ctx || !this.master || !this._playing) return;
-
-    if (step % 4 === 0) this.kick(time);
-    if (step % 4 === 2) this.hat(time);
-    if (step === 4 || step === 12) this.clap(time);
-    if (step % 2 === 0) this.bass(time, TRACKS[this._track].bass[(step / 2) % 8]);
-    if (step === 0 || step === 8) {
-      this.chord(time, TRACKS[this._track].chords[step === 0 ? 0 : 1]);
-    }
-
-    if (step % 4 === 0) {
-      const delay = Math.max(0, (time - this.ctx.currentTime) * 1000);
+    const now = this.ctx.currentTime;
+    while (this.nextBeatAt < now + 0.05) {
+      const isBar = this.beatCount % 4 === 0;
+      const delay = Math.max(0, (this.nextBeatAt - now) * 1000);
       window.setTimeout(() => {
         if (!this._playing) return;
         this.onBeat?.();
-        if (step === 0) this.onBar?.();
+        if (isBar) this.onBar?.();
       }, delay);
-    }
-  }
-
-  private kick(time: number) {
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.setValueAtTime(130, time);
-    osc.frequency.exponentialRampToValueAtTime(45, time + 0.28);
-    gain.gain.setValueAtTime(0.85, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.32);
-    osc.connect(gain).connect(this.master!);
-    osc.start(time);
-    osc.stop(time + 0.34);
-  }
-
-  private hat(time: number) {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    const filter = ctx.createBiquadFilter();
-    const gain = ctx.createGain();
-    src.buffer = this.noise;
-    filter.type = "highpass";
-    filter.frequency.value = 7000;
-    gain.gain.setValueAtTime(0.11, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-    src.connect(filter).connect(gain).connect(this.master!);
-    src.start(time);
-    src.stop(time + 0.06);
-  }
-
-  private clap(time: number) {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    const filter = ctx.createBiquadFilter();
-    const gain = ctx.createGain();
-    src.buffer = this.noise;
-    filter.type = "bandpass";
-    filter.frequency.value = 1400;
-    filter.Q.value = 0.8;
-    gain.gain.setValueAtTime(0.22, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
-    src.connect(filter).connect(gain).connect(this.master!);
-    src.start(time);
-    src.stop(time + 0.15);
-  }
-
-  private bass(time: number, frequency: number) {
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    const filter = ctx.createBiquadFilter();
-    const gain = ctx.createGain();
-    osc.type = "sawtooth";
-    osc.frequency.value = frequency;
-    filter.type = "lowpass";
-    filter.frequency.value = 420;
-    gain.gain.setValueAtTime(0.16, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
-    osc.connect(filter).connect(gain).connect(this.master!);
-    osc.start(time);
-    osc.stop(time + 0.22);
-  }
-
-  private chord(time: number, root: number) {
-    const ctx = this.ctx!;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.045, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.7);
-    gain.connect(this.master!);
-    for (const ratio of [1, 1.1892, 1.4983]) {
-      const osc = ctx.createOscillator();
-      osc.type = "triangle";
-      osc.frequency.value = root * ratio;
-      osc.connect(gain);
-      osc.start(time);
-      osc.stop(time + 0.72);
+      this.nextBeatAt += 60 / this._bpm;
+      this.beatCount++;
     }
   }
 }
