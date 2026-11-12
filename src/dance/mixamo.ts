@@ -11,10 +11,12 @@ const DIR = "/models/mixamo";
 export const MIXAMO_CLIPS = [
   { id: "Idle", file: "Idle" },
   { id: "Walking", file: "Walking" },
-  { id: "Robot_Hip_Hop_Dance", file: "Robot_Hip_Hop_Dance", bpm: 100 },
-  { id: "Breakdance_Uprock", file: "Breakdance_Uprock", bpm: 110 },
-  { id: "Jazz_Dancing", file: "Jazz_Dancing", bpm: 128 },
-  { id: "House_Dancing", file: "House_Dancing", bpm: 110 },
+  // firstBeat は「クリップ先頭から1拍目まで」の秒数。Mixamo は先頭が拍頭の前提。
+  // 拍がズレるクリップだけここを調整する。
+  { id: "Robot_Hip_Hop_Dance", file: "Robot_Hip_Hop_Dance", bpm: 100, firstBeat: 0 },
+  { id: "Breakdance_Uprock", file: "Breakdance_Uprock", bpm: 110, firstBeat: 0 },
+  { id: "Jazz_Dancing", file: "Jazz_Dancing", bpm: 128, firstBeat: 0 },
+  { id: "House_Dancing", file: "House_Dancing", bpm: 110, firstBeat: 0 },
 ] as const;
 
 type ClipDef = (typeof MIXAMO_CLIPS)[number];
@@ -141,4 +143,10 @@ export function timeScaleForClip(id: string, bpm: number): number {
   const natural = bpmFor(id);
   if (!natural) return 1;
   return THREE.MathUtils.clamp(bpm / natural, 0.8, 1.25);
+}
+
+/** 小節頭でクリップを開始するときの、クリップ内の開始秒。 */
+export function clipStartOffset(id: string): number {
+  const def = MIXAMO_CLIPS.find((clip) => clip.id === id);
+  return def && "firstBeat" in def ? def.firstBeat : 0;
 }

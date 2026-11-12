@@ -11,10 +11,12 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 - Mixamo の人間キャラ（Michelle）＋モーションキャプチャのダンス、歩行（Three.js）
 - Pixabay の無料楽曲「Dance Electro 120 bpm - Full」（120 BPM、LiteSaturation）
 - BPM 同期、停止フェード、発話ダッキング、拍位相
+- 手動ビートグリッド（120 BPM / 先頭ダウンビート 0.987s / 60小節）と、小節頭のセクション切替（intro / drop / break / build / outro）
+- `playTrack` / `stopMusic` / `dance` の nextBar 量子化
 - Gemini Live の DJ 人格 MC（コードは残るが現在は未接続）
 - LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残るが、MC 接続は休止中
 - 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
-- MIRAGE ヘッダー、モード／曲／BPM／小節の readout、SOUND ON / OFF、モバイル対応
+- MIRAGE ヘッダー、モード／曲／BPM／セクション/style の readout、SOUND ON / OFF、モバイル対応
 
 **公演の1巡**: ダンス → 音楽停止 → 歩行 → 曲を頭から再開 → ダンス。
 
@@ -95,10 +97,10 @@ mirage-v2/
 
 ```bash
 pnpm build       # tsc --noEmit && vite build
-pnpm test        # トラッキング＋Mixamo アセット＋旧ダンス核の自己テスト
+pnpm test        # トラッキング＋Mixamo アセット＋音源＋ビートグリッド／セクション＋旧ダンス核の自己テスト
 ```
 
-Mixamo アセットのテストは `scripts/test-mixamo.mjs`（GLB の存在・アニメーション・スキン）。旧ダンス核のテストは `scripts/test-dance.mjs`。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
+Mixamo アセットのテストは `scripts/test-mixamo.mjs`（GLB の存在・アニメーション・スキン）。ビートグリッドとセクション割りは `scripts/test-sections.mjs`、旧ダンス核は `scripts/test-dance.mjs`。公演状態機械・キュー量子化の残りのテストは `DJ-9` で追加する（[docs/roadmap.md](docs/roadmap.md)）。
 
 ## 展示前チェックリスト
 

@@ -24,7 +24,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 ### 1.2 今回のスコープ
 
 - 1ステージ・1体の 3D キャラクター。
-- 無料楽曲1曲（Dance Electro 120 bpm / Pixabay）と BPM 同期。
+- 無料楽曲1曲（Dance Electro 120 bpm / Pixabay）と BPM 同期。先頭拍オフセットとセクションを持つ手動ビートグリッド。
 - ダンス、停止、曲変更、歩行、トーク、ジェスチャーの公演アクション。
 - Gemini Live による日本語 MC（出力専用）。
 - デスクトップ／モバイルのステージ UI。
@@ -46,14 +46,14 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 | エントリ | `/` が AI DJ ステージ。`/dance.html` は互換エイリアス | `index.html` / `dance.html` / `src/dance/main.tsx` |
 | 3D ステージ | Three.js、Mixamo の人間キャラ、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
 | 公演状態 | `ShowAction` / `ShowState`、1曲、ステージマーク | `src/dance/show.ts` |
-| 音楽 | 無料楽曲1曲の Web Audio 再生、停止フェード、ダッキング、拍位相、BPM | `src/dance/audio.ts` |
-| 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。style ごとにクリップを選び、BPM に `timeScale` を合わせる | `src/dance/mixamo.ts` / `src/dance/DanceStage.tsx` |
+| 音楽 | 無料楽曲1曲の Web Audio 再生、停止フェード、ダッキング、拍位相、BPM、先頭拍オフセット、小節ごとのセクション | `src/dance/audio.ts` / `src/dance/show.ts` |
+| 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。セクションの style ごとにクリップを小節頭で選び、BPM に `timeScale` を合わせる | `src/dance/mixamo.ts` / `src/dance/DanceStage.tsx` |
 | 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `src/dance/DanceStage.tsx` |
 | MC / Director | Gemini Live のコードは残るが、現在は未接続（ダンスのみ）。DJ 人格・8小節ごとの判断・ツール実行は休眠 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
 | 観客入力 | 未接続。カメラ・表情・トラッキングの資産は残している | `src/hooks/useFaceDetection.ts` / `src/vision/expression.ts` / `src/tracking/` |
 | Studio | Live 短命トークン、検索・天気・vision の API 中継 | `studio/app/api/` |
 | 生成 special | 未着手 | — |
-| テスト | トラッキング、Mixamo GLB、旧ダンス核の自己テスト | `scripts/test-tracking.mjs` / `scripts/test-mixamo.mjs` / `scripts/test-dance.mjs` |
+| テスト | トラッキング、Mixamo GLB、音源、ビートグリッド／セクション、旧ダンス核の自己テスト | `scripts/test-tracking.mjs` / `scripts/test-mixamo.mjs` / `scripts/test-audio.mjs` / `scripts/test-sections.mjs` / `scripts/test-dance.mjs` |
 
 ## 3. 機能要件
 
@@ -70,10 +70,11 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 ### 3-2. MusicTransport
 
 - 曲の再生・停止・切り替えを管理する。
-- BPM、拍、小節、拍内位相、energy、section（intro / build / drop / break / outro）を身体側へ渡す。
+- BPM、拍、小節、拍内位相、energy、section（intro / build / drop / break / outro）を身体側へ渡す。先頭ダウンビートは 0.987s。
 - 発話中は音楽をダッキングする。現在はゲインを 0.28 に下げる。
 - 停止はフェードで行い、身体は Idle へクロスフェードする。
-- 曲変更・停止は `nextBar` での量子化を目標にする。現在は即時実行。
+- 曲変更・停止・ダンス開始は `nextBar`（次の小節頭）で量子化する。`DanceStage` がセクションのクリップも小節頭で切り替える。
+- セクションは `show.ts` の手動グリッド（intro / drop / break / build / outro）で持つ。任意曲の自動解析はまだ行わない。
 - 音楽はブラウザ内で完結させる。外部 API キーをブラウザに置かない。
 
 ### 3-3. Body Performance
@@ -129,7 +130,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### 3-7. UI / 運用
 
-- ステージ上に現在のモード、曲、BPM、小節を表示する。
+- ステージ上に現在のモード、曲、BPM、セクション/style を表示する。
 - MC の発話をテキストでも表示する。
 - `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` のクイック操作を用意する。
 - MC と音楽のミュートを個別に切り替えられる。
@@ -165,7 +166,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - 公演状態機械、BPM 同期、キュー量子化、Director の出力変換は純関数に分け、ブラウザ無しでテストする。
 - 外部 API（Gemini / Studio）をモックした統合テストを入れる。
 - 実機カメラ・マイクがなくてもビルドと主要ロジックを検証できるようにする。
-- 現状は `scripts/test-tracking.mjs`、`scripts/test-mixamo.mjs`、`scripts/test-audio.mjs`、`scripts/test-dance.mjs`。`pnpm test` で全実行する。公演状態機械・BPM 同期・キュー量子化のテストは `DJ-9` で追加する。
+- 現状は `scripts/test-tracking.mjs`、`scripts/test-mixamo.mjs`、`scripts/test-audio.mjs`、`scripts/test-sections.mjs`、`scripts/test-dance.mjs`。`pnpm test` で全実行する。ビートグリッド／セクション引きは `test-sections.mjs` で固定済み。公演状態機械・キュー量子化のテストは `DJ-9` で追加する。
 
 ### 4.4 計測
 
@@ -200,7 +201,9 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - [x] 曲停止で Idle、歩行で Walking、到着後に Dance / Idle へ戻る。
 - [x] Mixamo アセットの出典・ライセンスを記録した。
 - [x] `pnpm build` と `pnpm test` が通る。
-- [ ] 本物の曲と `nextBar` 量子化。
+- [x] 本物の曲と `nextBar` 量子化。
+- [x] 先頭ダウンビート 0.987s / 120 BPM / 60小節の手動ビートグリッドと、intro / drop / break / build / outro のセクション切替。
+- [ ] オンセット連動のアクセントと、任意曲の自動ビート解析。
 - [ ] 表情・リップシンク・ジェスチャー。
 
 ### 前のマイルストーン（2026-11-08 / 履歴）
@@ -232,14 +235,18 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### DJ-8 音楽・キュー・リップシンク
 
-- [ ] 本物の曲（CC0 または許諾済み）を再生できる。
-- [ ] `nextBar` で曲変更・停止・ダンス開始を量子化する。
-- [ ] ビート解析または手動ビートグリッドで拍位相を安定させる。
+- [x] 本物の曲（CC0 または許諾済み）を再生できる。
+- [x] `nextBar` で曲変更・停止・ダンス開始を量子化する。
+- [x] ビート解析または手動ビートグリッドで拍位相を安定させる。
+- [x] 小節頭でセクション（intro / drop / break / build / outro）ごとのクリップへ切り替える。
+- [ ] キック／スネア／オンセットに合わせた首・腕・ライト・カメラのアクセント。
+- [ ] 任意曲の自動ビート解析。
 - [ ] 発話に合わせた口パクを入れる。
 
 ### DJ-9 品質・テスト
 
 - [x] ダンス核（拍・小節・style・atom）の純関数テストを追加し、`pnpm test` で実行する。
+- [x] ビートグリッド／セクション引きの純関数テストを追加し、`pnpm test` で実行する。
 - [ ] 公演状態機械・BPM 同期・キュー量子化の純関数テストを追加する。
 - [ ] CI を整備する。
 - [ ] 30分連続稼働、曲停止・変更の成功率、MC の発話回数を計測する。
@@ -256,7 +263,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 | 項目 | まだ決まっていないこと | 決めるタイミング |
 | --- | --- | --- |
-| MC の判断周期 | 8小節のままか、4小節・1小節へ短くするか | 観客入力と nextBar の実装時 |
+| MC の判断周期 | 8小節のままか、4小節・1小節へ短くするか | 観客入力の実装時 |
 | 生成モデル | TM2D / FlowerDance / EDGE のどれか | DJ-6 |
 | 音楽 | 複数曲の運用か、生成音楽か | DJ-8 |
 | キャラクター | Mixamo Michelle に決定。表情・視線の実装方法が未定 | DJ-10 |

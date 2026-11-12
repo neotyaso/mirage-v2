@@ -17,11 +17,12 @@ import {
   type DanceMove,
   type DanceStyle,
 } from "./dance";
-import { clipForStyle, loadMixamoRig, timeScaleForClip } from "./mixamo";
+import { clipForStyle, clipStartOffset, loadMixamoRig, timeScaleForClip } from "./mixamo";
 import { DJ_SYSTEM_PROMPT, DJ_TOOLS, buildMcPrompt } from "./mc";
 import {
   MARKS,
   TRACKS,
+  sectionAtBar,
   type MarkId,
   type ShowAction,
   type ShowMode,
@@ -80,6 +81,7 @@ export function DanceStage() {
     playing: false,
     bar: 0,
     beat: 0,
+    section: "intro",
     style: "hype",
     energy: 0.7,
   });
@@ -103,32 +105,12 @@ export function DanceStage() {
           moves: action.moves,
         });
         api.setDucked(false);
-        setClipLabel("DANCE");
-        setShow((s) => ({
-          ...s,
-          mode: "dance",
-          playing: true,
-          bpm: action.bpm ?? s.bpm,
-          style: action.style ?? s.style,
-          energy: action.energy ?? s.energy,
-        }));
         break;
       case "stopMusic":
         api.stopMusic(action.fadeBars);
-        setClipLabel("IDLE");
-        setShow((s) => ({ ...s, mode: "idle", playing: false }));
         break;
       case "playTrack":
         api.playTrack(action.trackId);
-        setClipLabel("DANCE");
-        setShow((s) => ({
-          ...s,
-          mode: "dance",
-          playing: true,
-          trackId: action.trackId,
-          trackName: TRACKS[action.trackId].name,
-          bpm: TRACKS[action.trackId].bpm,
-        }));
         break;
       case "walkTo":
         api.walkTo(action.mark);
@@ -146,7 +128,7 @@ export function DanceStage() {
         break;
       case "setClip":
         api.setClip(action.clip, showRef.current.bpm);
-        setClipLabel(action.clip.toUpperCase());
+        if (action.clip !== "Dance") setClipLabel(action.clip.toUpperCase());
         break;
     }
   }, []);
@@ -245,6 +227,7 @@ export function DanceStage() {
           prev.playing === state.playing &&
           prev.bar === state.bar &&
           prev.beat === state.beat &&
+          prev.section === state.section &&
           prev.bpm === state.bpm &&
           prev.style === state.style &&
           prev.energy === state.energy;
@@ -435,6 +418,12 @@ export function DanceStage() {
     let mode: ShowMode = "idle";
     let danceCue: DanceCue = { style: "hype", energy: 0.7, moves: [] };
     let walkTarget: THREE.Vector3 | null = null;
+    let autoDance = false;
+    let justRestarted = false;
+    let styleOverride: DanceStyle | null = null;
+    let sectionStartBar = -1;
+    type PendingAction = { kind: "stop" | "play" | "dance"; run: () => void };
+    let pendingAtBar: PendingAction | null = null;
     let disposed = false;
     let startedAt = -1;
     let baseRadius = 4.2;
@@ -454,7 +443,7 @@ export function DanceStage() {
       current.timeScale = timeScaleForClip(current.getClip().name, audio.bpm);
     };
 
-    const fadeTo = (name: string) => {
+    const fadeTo = (name: string, alignToBeat = false) => {
       const next = actions.get(name) ?? actions.get("Idle");
       if (!next) return;
       if (next === current) {
@@ -462,6 +451,7 @@ export function DanceStage() {
         return;
       }
       next.reset();
+      if (alignToBeat) next.time = clipStartOffset(name);
       next.enabled = true;
       next.setEffectiveWeight(1);
       next.setLoop(THREE.LoopRepeat, Infinity);
@@ -471,6 +461,40 @@ export function DanceStage() {
       else next.fadeIn(0.35);
       current = next;
       syncSpeed();
+    };
+
+    // 小節ごとにセクションを引き、ダンスクリップを小節頭で切り替える。
+    // MC の style 指定は、そのセクションの間だけ上書きとして使う。
+    const applySection = (bar: number, override?: DanceStyle) => {
+      const section = sectionAtBar(TRACKS[audio.track], bar);
+      if (section.startBar !== sectionStartBar) {
+        sectionStartBar = section.startBar;
+        styleOverride = null;
+      }
+      if (override) styleOverride = override;
+      const style = styleOverride ?? section.style;
+      danceCue = { ...danceCue, style, energy: section.energy };
+      if (mode !== "dance" || walkTarget) return;
+      const clip = clipForStyle(style);
+      baseClip = clip;
+      desiredClip = clip;
+      fadeTo(clip, true);
+    };
+
+    audio.onBar = () => {
+      const bar = audio.getPhase().bar;
+      const pending = pendingAtBar;
+      pendingAtBar = null;
+      pending?.run();
+      if (justRestarted) {
+        justRestarted = false;
+        return;
+      }
+      if (autoDance && audio.playing && !walkTarget) {
+        autoDance = false;
+        setMode("dance");
+      }
+      if (mode === "dance" && !walkTarget) applySection(bar);
     };
 
     const smoothAngle = (value: number, target: number, dt: number, rate = 10) => {
@@ -491,11 +515,30 @@ export function DanceStage() {
       .catch((error) => console.error("MIXAMO load failed", error));
 
     const setClip = (clip: string, bpm: number) => {
-      audio.setBpm(bpm);
       if (clip === "Dance") {
-        baseClip = clipForStyle(danceCue.style);
-        setMode("dance");
-      } else if (clip === "Walking" || clip === "Running") {
+        if (!audio.playing) {
+          audio.setBpm(bpm);
+          void audio.start().catch(() => {});
+          autoDance = true;
+          baseClip = "Idle";
+          desiredClip = "Idle";
+          fadeTo("Idle", true);
+          setMode("idle");
+          return;
+        }
+        pendingAtBar = {
+          kind: "dance",
+          run: () => {
+            audio.setBpm(bpm);
+            autoDance = false;
+            setMode("dance");
+            applySection(audio.getPhase().bar);
+            syncSpeed();
+          },
+        };
+        return;
+      }
+      if (clip === "Walking" || clip === "Running") {
         baseClip = "Walking";
         setMode("walk");
       } else {
@@ -508,33 +551,55 @@ export function DanceStage() {
     apiRef.current = {
       start: () => {
         void audio.start("neon").catch(() => {});
-        danceCue = { ...danceCue, energy: 0.8 };
-        baseClip = clipForStyle(danceCue.style);
-        desiredClip = baseClip;
-        fadeTo(baseClip);
-        setMode("dance");
+        pendingAtBar = null;
+        justRestarted = false;
+        autoDance = true;
+        styleOverride = null;
+        sectionStartBar = -1;
+        baseClip = "Idle";
+        desiredClip = "Idle";
+        fadeTo("Idle", true);
+        setMode("idle");
         startedAt = performance.now() / 1000;
       },
       setClip,
       setMuted: (m) => audio.setMuted(m),
       setDucked: (d) => audio.setDucked(d),
       stopMusic: (fadeBars = 1) => {
-        walkTarget = null;
-        audio.stop(fadeBars);
-        baseClip = "Idle";
-        desiredClip = "Idle";
-        fadeTo("Idle");
-        setMode("idle");
+        const stop = () => {
+          audio.stop(fadeBars);
+          autoDance = false;
+          styleOverride = null;
+          sectionStartBar = -1;
+          if (!walkTarget && mode !== "talk") {
+            baseClip = "Idle";
+            desiredClip = "Idle";
+            fadeTo("Idle", true);
+            setMode("idle");
+          }
+        };
+        if (audio.playing) pendingAtBar = { kind: "stop", run: stop };
+        else stop();
       },
       playTrack: (trackId) => {
-        walkTarget = null;
-        void audio.playTrack(trackId).then(() => syncSpeed());
-        baseClip = clipForStyle(danceCue.style);
-        desiredClip = baseClip;
-        fadeTo(baseClip);
-        setMode("dance");
+        const play = (insideBar: boolean) => {
+          if (insideBar) justRestarted = true;
+          autoDance = true;
+          styleOverride = null;
+          sectionStartBar = -1;
+          if (!walkTarget && mode !== "talk") {
+            baseClip = "Idle";
+            desiredClip = "Idle";
+            fadeTo("Idle", true);
+            setMode("idle");
+          }
+          void audio.playTrack(trackId).then(() => syncSpeed());
+        };
+        if (audio.playing) pendingAtBar = { kind: "play", run: () => play(true) };
+        else play(false);
       },
       walkTo: (mark) => {
+        if (pendingAtBar?.kind === "dance") pendingAtBar = null;
         const target = MARKS[mark];
         walkTarget = new THREE.Vector3(target.x, 0, target.z);
         baseClip = "Walking";
@@ -543,43 +608,63 @@ export function DanceStage() {
         setMode("walk");
       },
       talk: () => {
+        if (pendingAtBar?.kind === "dance") pendingAtBar = null;
         walkTarget = null;
         audio.setDucked(true);
+        autoDance = false;
         baseClip = "Idle";
         desiredClip = "Idle";
         fadeTo("Idle");
         setMode("talk");
       },
       dance: (input) => {
-        walkTarget = null;
-        if (typeof input.bpm === "number") audio.setBpm(input.bpm);
-        danceCue = mergeDanceCue(danceCue, {
-          style: input.style,
-          energy: input.energy,
-          moves: input.moves,
-        });
-        if (!audio.playing) void audio.start().catch(() => {});
-        audio.setDucked(false);
-        baseClip = clipForStyle(danceCue.style);
-        desiredClip = baseClip;
-        fadeTo(baseClip);
-        setMode("dance");
+        const apply = () => {
+          walkTarget = null;
+          if (typeof input.bpm === "number") audio.setBpm(input.bpm);
+          danceCue = mergeDanceCue(danceCue, {
+            style: input.style,
+            energy: input.energy,
+            moves: input.moves,
+          });
+          audio.setDucked(false);
+          if (!audio.playing) {
+            autoDance = true;
+            if (input.style) styleOverride = input.style;
+            sectionStartBar = sectionAtBar(TRACKS[audio.track], audio.getPhase().bar).startBar;
+            baseClip = "Idle";
+            desiredClip = "Idle";
+            fadeTo("Idle", true);
+            setMode("idle");
+            void audio.start().catch(() => {});
+            return;
+          }
+          autoDance = false;
+          setMode("dance");
+          applySection(audio.getPhase().bar, input.style);
+          syncSpeed();
+        };
+        if (audio.playing) pendingAtBar = { kind: "dance", run: apply };
+        else apply();
       },
       gesture: (_intent) => {
         // MC のジェスチャーは今はダンスを止めない。Live 再接続時に専用クリップを足す。
       },
       getState: () => {
         const phase = audio.getPhase();
+        const track = TRACKS[audio.track];
+        const section = sectionAtBar(track, phase.bar);
+        const style = section.startBar === sectionStartBar ? (styleOverride ?? section.style) : section.style;
         return {
           mode,
           trackId: audio.track,
-          trackName: TRACKS[audio.track].name,
+          trackName: track.name,
           bpm: audio.bpm,
           playing: audio.playing,
           bar: phase.bar,
           beat: phase.beat,
-          style: danceCue.style,
-          energy: danceCue.energy,
+          section: section.id,
+          style,
+          energy: section.energy,
         };
       },
     };
@@ -614,11 +699,12 @@ export function DanceStage() {
         const dist = Math.hypot(dx, dz);
         if (dist < 0.06) {
           walkTarget = null;
-          const nextMode = audio.playing ? "dance" : "idle";
-          baseClip = audio.playing ? clipForStyle(danceCue.style) : "Idle";
-          desiredClip = baseClip;
-          fadeTo(baseClip);
-          setMode(nextMode);
+          // 到着後は即ダンスへ戻さず、次の小節頭でセクションのクリップに入る。
+          autoDance = audio.playing;
+          baseClip = "Idle";
+          desiredClip = "Idle";
+          fadeTo("Idle", true);
+          setMode("idle");
         } else {
           const step = Math.min(dist, 0.9 * dt);
           stageX += (dx / dist) * step;
@@ -687,8 +773,8 @@ export function DanceStage() {
     startedRef.current = true;
     setStarted(true);
     setMcError(null);
-    setClipLabel("DANCE");
-    setShow((s) => ({ ...s, mode: "dance", playing: true }));
+    setClipLabel("IDLE");
+    setShow((s) => ({ ...s, mode: "idle", playing: true }));
     apiRef.current?.start();
   };
 
@@ -733,7 +819,8 @@ export function DanceStage() {
         <span className="dj-readout-label">NOW / {clipLabel}</span>
         <strong className="dj-readout-clip">{show.mode.toUpperCase()}</strong>
         <span className="dj-readout-bpm">
-          {show.trackName} · {show.bpm} BPM · {show.style.toUpperCase()} {Math.round(show.energy * 100)}
+          {show.trackName} · {show.bpm} BPM · {show.section.toUpperCase()}/{show.style.toUpperCase()}{" "}
+          {Math.round(show.energy * 100)}
         </span>
       </aside>
 

@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:front": "vite",
     "health": "node scripts/health-check.mjs",
-    "test": "node scripts/test-tracking.mjs && node scripts/test-mixamo.mjs && node scripts/test-audio.mjs && node scripts/test-dance.mjs",
+    "test": "node scripts/test-tracking.mjs && node scripts/test-mixamo.mjs && node scripts/test-audio.mjs && node scripts/test-sections.mjs && node scripts/test-dance.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

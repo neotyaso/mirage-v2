@@ -1,8 +1,8 @@
 # AI DJ / 3D Performance Architecture
 
 > 最終更新: 2026-11-12  
-> 状態: **本線**。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンスまで接続。Gemini Live MC/Director はコードを残して休止中。  
-> 現状: 音は Pixabay の無料楽曲1曲（Dance Electro 120 bpm）、身体は Mixamo の Michelle＋モーションキャプチャのダンス。生成special・観客入力・表情・リップシンク・本格的なビート解析は未着手。  
+> 状態: **本線**。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンス、手動ビートグリッド＋小節頭のセクション切替まで接続。Gemini Live MC/Director はコードを残して休止中。
+> 現状: 音は Pixabay の無料楽曲1曲（Dance Electro 120 bpm / 先頭ダウンビート 0.987s / 60小節）、身体は Mixamo の Michelle＋モーションキャプチャのダンス。`playTrack` / `stopMusic` / `dance` は次の小節頭に量子化。生成special・観客入力・任意曲の自動ビート解析・オンセット連動アクセント・表情・リップシンクは未着手。
 > 関連: 要件は [requirements.md](requirements.md)、着手順は [roadmap.md](roadmap.md)、決定は [decisions.md](decisions.md)（D-022 / D-023）。
 
 ---
@@ -113,9 +113,11 @@
 ### 3.2 MusicTransport
 
 - 曲の再生・停止・クロスフェード
-- BPM、拍、小節、セクション（intro/build/drop/break）
+- BPM、拍、小節、セクション（intro/build/drop/break/outro）
+- 先頭ダウンビートのオフセット（この曲は 0.987s）と小節グリッド
 - 発話時のダッキング
 - ビートグリッドを身体側へ渡す
+- `playTrack` / `stopMusic` / `dance` は次の小節頭で実行する
 
 ### 3.3 Body Performance
 
@@ -241,7 +243,7 @@ type ShowAction =
 // 沈黙はShowActionではなく、MCが「ツールを呼ばず音声も出さない」で表現する。
 ```
 
-> 実装では `playTrack.at` は未実装（即時実行）。`dance` は `style` / `moves` / `energy` を身体へ渡す。生成モデル用の `Cue.description` はまだ使っていない。
+> 実装では `playTrack` / `stopMusic` / `dance` は次の小節頭に量子化する（`pendingAtBar`）。`playTrack.at` の `"now"` はまだ使っていない。`dance` は `style` / `moves` / `energy` を身体へ渡す。生成モデル用の `Cue.description` はまだ使っていない。
 
 ### 5.4 4小節プランの例
 
@@ -540,7 +542,8 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - Mixamo の Michelle＋モーションキャプチャのダンスクリップ（`src/dance/mixamo.ts`）
 - style をクリップへマップ: hype=`Robot_Hip_Hop_Dance` / cool=`Breakdance_Uprock` / cute=`Jazz_Dancing` / chill=`House_Dancing`
 - 歩行はルート移動＋ Mixamo の `Walking` クリップ
-- BPMに合わせて `AnimationAction.timeScale` を変更（0.8〜1.25）。ダンスの拍位相は `DanceAudio.getPhase()` から取る
+- BPMに合わせて `AnimationAction.timeScale` を変更（0.8〜1.25）
+- `sectionAtBar` が曲の小節からセクションを引き、小節頭でセクションのクリップへクロスフェード
 - 旧 `src/dance/dance.ts` の base groove＋atom はステージから退役（型・検証だけ残す）
 
 ### Phase 4: LLM Director（実装済み）
@@ -548,8 +551,8 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 - Gemini Liveのツールから `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` を実行
 - `dance` ツールで style / moves / energy / BPM を指定する
 - MCの判断と発話を同じターンで行う
-- 画面上にMCの発話と現在のモード・曲・BPM・style・energyを表示
-- 検証・キュー・nextBarの厳密な量化はまだ簡易
+- 画面上にMCの発話と現在のモード・曲・BPM・セクション/style・energyを表示
+- 判断の実行は次の小節頭に量子化（`pendingAtBar`）。曲変更・停止・ダンス開始・セクション切替が小節に乗る
 
 ### Phase 5: 10%生成special
 
@@ -606,11 +609,11 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 ### 未接続・簡易なところ
 
-- 本格的なビート解析（今は 120 BPM 固定の無料楽曲1曲）
+- 任意曲の自動ビート解析（今は 120 BPM / 先頭 0.987s / 60小節の手動グリッド）
+- キック／スネア／オンセット連動の首・腕・ライト・カメラのアクセント
 - 生成モデルと `MotionSource` 抽象化
 - 観客・カメラ入力（人数、表情、動き）
 - リップシンク、表情
-- `nextBar` での厳密なキューイング（今は即時実行）
 - `shortcut:` 歩行は直線移動＋到着後に向き直るだけ。段差・障害物・足滑り補正なし
 - 実機マイク／スピーカーの回り込み試験
 - 表情・ジェスチャー・リップシンク（Mixamo Michelle 本体は導入済み）

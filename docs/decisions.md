@@ -279,7 +279,7 @@
   - `README.md` / `requirements.md` / `roadmap.md` / `NEXT.md` を AI DJ 本線に書き換え。旧 requirements / roadmap は `docs/legacy/`。
   - 受付の会話 UI・2D キャラ・会話フローを削除。カメラ／表情／トラッキング／Studio 基盤は残す。
   - D-002 / D-005 / D-010 / D-011 / D-013 / D-015〜D-017 / D-019 は DJ にそのまま適用しない（各項目に注記）。
-- **制限 / 次の設計課題**: MC は出力専用、判断は8小節ごとのテキストプロンプト、`nextBar` の量子化は未実装、音楽は当時シンセ2曲（D-025 で無料楽曲1曲に変更）。`shortcut: MCは8小節ごとのテキストプロンプトで判断, 観客・カメラ入力とnextBar量子化が入ったら再設計`
+- **制限 / 次の設計課題**: MC は出力専用、判断は8小節ごとのテキストプロンプト、`nextBar` の量子化は未実装、音楽は当時シンセ2曲（D-025 で無料楽曲1曲に変更）。`shortcut: MCは8小節ごとのテキストプロンプトで判断, 観客・カメラ入力とnextBar量子化が入ったら再設計` → `nextBar` 量子化は D-026 で実装。
 
 
 ## D-024 ダンス身体は Mixamo の人間キャラ＋モーションキャプチャに置き換える
@@ -313,7 +313,27 @@
   - `src/dance/show.ts` は1曲（`neon`）のメタデータ（名前・BPM・ファイル）を持つ。`TrackId` は `"neon"` のみ。
   - `src/dance/audio.ts` は MP3 の fetch／decode／ループ再生に変更。`setBpm` は再生速度（`playbackRate`）で追従するため、大きく変えるとピッチも動く。
   - 出典・ライセンスは `public/audio/README.md`、`scripts/test-audio.mjs` で存在を検査する。
-- **制限 / 次の設計課題**: ビートグリッドは 120 BPM 固定で、先頭の拍オフセットは 0 とみなしている。実音に合わせた微調整と `nextBar` 量子化は DJ-8 で行う。`shortcut: 120 BPM 固定・先頭拍0で再生, 実音のビート解析とnextBar量子化が入ったら再設計`
+- **制限 / 次の設計課題**: ビートグリッドは 120 BPM 固定で、先頭の拍オフセットは 0 とみなしている。実音に合わせた微調整と `nextBar` 量子化は DJ-8 で行う。`shortcut: 120 BPM 固定・先頭拍0で再生, 実音のビート解析とnextBar量子化が入ったら再設計` → D-026 で先頭ダウンビート 0.987s と `nextBar` 量子化を追加した。
+
+## D-026 曲に手動ビートグリッドとセクションを持たせ、小節頭で振付を切り替える（2026-11-12）
+
+- **決定**: `TRACKS.neon` に **BPM 120 / 先頭ダウンビート 0.987s / 60小節** と、8小節単位のセクション（intro / drop / break / build / outro）を持たせる。`DanceAudio` は曲頭ではなく `startAt + firstBeat` を拍グリッドのアンカーにし、`onBeat` / `onBar` / `getPhase` をそこから数える。`DanceStage` は `audio.onBar` で `sectionAtBar` を引き、セクションの style に対応する Mixamo クリップを小節頭でクロスフェードする。`playTrack` / `stopMusic` / `dance` は次の小節頭まで待って実行する。クリップ側にも `firstBeat` の調整値を用意し、小節頭で開始するときはその秒から再生する（現状は全クリップ 0）。
+- **理由**:
+  - 曲の実音を解析すると、0.987s に最初のダウンビートがあり、以降 2.0s（4拍）ごとに小節が続く。0.987 / 8小節 intro / 16小節 drop / 8小節 break / 8小節 build / 16小節 drop / outro という構成も RMS で確認できた。
+  - 曲の先頭から拍を数えると最初の1秒でダンスがズレる。アンカーを最初のダウンビートに置くと、クリップの1拍目と曲の1拍目が揃う。
+  - 小節頭でクリップを切り替えると、振付の継ぎ目が拍の区切りに乗り、曲に合わせて踊っているように見える。
+  - `playTrack` / `stopMusic` / `dance` を即時実行すると、曲の途中で身体だけが先に動く。次の小節頭まで待つ方が公演として自然。
+- **不採用案**:
+  - (a) 実行時に FFT / オンセットから拍を推定 → 今の1曲では手動グリッドの方が正確で、実装も小さい。任意曲を入れる段階で再検討する。
+  - (b) クリップを毎フレーム手続き的に拍へ合わせる → Mixamo のモーキャプの重心・接地が壊れる。クリップの `timeScale` と小節頭の開始で合わせる。
+  - (c) セクションを曲の RMS からリアルタイム判定 → 1曲固定の今は過剰。曲を差し替えるときに手動メタデータを書く方が安定する。
+  - (d) `playTrack` / `stopMusic` を即時実行のままにする → 曲と身体のズレが残る。
+- **影響**:
+  - `src/dance/show.ts` に `Track` / `TrackSection` / `sectionAtBar` を追加。`ShowState` に `section` を追加し、readout は `セクション/style` を表示する。
+  - `src/dance/audio.ts` は `firstBeat` をアンカーに使い、`getPhase` の小節を曲のループ内（0〜59）で返す。
+  - `src/dance/DanceStage.tsx` は `audio.onBar` でセクションを適用し、`pendingAtBar` で `playTrack` / `stopMusic` / `dance` を小節頭へ送る。歩行到着後も次の小節頭でダンスへ戻る。
+  - `src/dance/mixamo.ts` に `clipStartOffset` を追加。`scripts/test-sections.mjs` を追加し、`pnpm test` に含める。
+- **制限 / 次の設計課題**: 先頭拍 0.987s とセクション割りはこの曲の手動解析。Mixamo クリップの先頭拍は 0 と仮定しており、ズレるクリップは `firstBeat` で調整する。任意曲の自動ビート解析、キック／スネア／オンセット連動のアクセント、ループ継ぎ目のクリップ側の微調整は残る。`shortcut: 1曲分の手動ビートグリッドとセクション, 任意曲・複数曲を入れるときに自動解析＋メタデータ入力へ`
 
 ## 決定の変更手順
 

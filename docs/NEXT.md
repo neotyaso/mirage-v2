@@ -10,14 +10,15 @@
 - 身体は **Mixamo の Michelle ＋ モーションキャプチャのダンスクリップ**。`src/dance/mixamo.ts` が読み込み・BPM 追従・クロスフェード・接地正規化を持つ。`RobotExpressive.glb` と手続きダンス層はステージから外した。
 - `ShowAction` / `ShowState`、Pixabay の無料楽曲「Dance Electro 120 bpm」1曲、停止フェード、ダッキング、拍位相、BPM 同期、歩行が動く。
 - ダンスクリップは `Robot_Hip_Hop_Dance`（hype）/ `Breakdance_Uprock`（cool）/ `Jazz_Dancing`（cute）/ `House_Dancing`（chill）。`src/dance/dance.ts` の手続きサンプラーは未使用で、style/moves の型と `mergeDanceCue` だけ MC ツール用に残している。
-- `scripts/test-mixamo.mjs` で GLB、`scripts/test-audio.mjs` で音源の存在を確認。`scripts/test-dance.mjs` は旧手続き核のテストとして残っている。
+- ビートグリッドは **120 BPM / 先頭ダウンビート 0.987s / 60小節**。`show.ts` の `sectionAtBar` が intro / build / drop / break / outro を返し、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭に量子化する。
+- `scripts/test-mixamo.mjs` で GLB、`scripts/test-audio.mjs` で音源、`scripts/test-sections.mjs` でビートグリッドとセクション割りを確認。`scripts/test-dance.mjs` は旧手続き核のテストとして残っている。
 - Gemini Live MC は現在**接続していない**。`useGeminiLive` とツールは残しているが、`startSession` から `connect()` しない。ステージはダンスのみ。
 - レセプションの会話 UI・2D キャラ・会話フローは削除済み。カメラ／表情／トラッキング／Studio 基盤は再利用資産として残している。
-- 生成 special、観客入力、`nextBar` 量子化、表情・リップシンクは未着手。
+- 生成 special、観客入力、任意曲の自動ビート解析、オンセット連動のアクセント、表情・リップシンクは未着手。
 
 ## 次にやること
 
-1. **DJ-8 nextBar 量子化** — `playTrack` / `stopMusic` / `dance` の開始を小節頭に合わせる。無料楽曲1曲は導入済みなので、実音に合わせたビートグリッドの微調整を残す。
+1. **DJ-8 残り** — キック／スネア／オンセットに合わせた首・腕・ライト・カメラのアクセントを足す。任意曲を入れる段階で自動ビート解析も検討する。
 2. **DJ-9 残り** — `ShowState` / `ShowAction` / BPM 同期 / キュー計算を純関数に切り出してテストする。CI、30分稼働、latency、MC の発話回数を計測する。
 3. **DJ-7 観客入力** — `useFaceDetection` の人数・表情を Director のプロンプトへ渡す。カメラなしでも動くようにする。
 4. **DJ-6 MotionSource＋生成 special** — `ClipMotionSource` / `ProceduralMotionSource` を切り、生成モデルを1つ選んでサビだけ A/B する。
@@ -48,6 +49,7 @@
 
 ## 直近の作業ログ
 
+- 2026-11-12: 曲の解析から **先頭ダウンビート 0.987s / 120 BPM / 60小節** のビートグリッドを `show.ts` に持たせ、`DanceAudio` の拍・小節をこの頭出しに合わせた。`sectionAtBar` で intro / drop / break / build / outro を引き、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭まで待って実行。ヘッドレス Chrome で 8/16/24小節の切替と、停止が小節線に乗ることを確認。`scripts/test-sections.mjs` を追加。
 - 2026-11-12: 音楽を Web Audio シンセ2曲から **Pixabay の無料楽曲「Dance Electro 120 bpm - Full」（120 BPM）** に差し替え。`DanceAudio` は MP3 を `AudioBufferSourceNode` でループ再生し、BPM から拍位相を作る。出典・ライセンスは `public/audio/README.md`、`scripts/test-audio.mjs` を追加。
 - 2026-11-12: ステージの身体を **Mixamo の Michelle＋モーションキャプチャのダンス**へ置き換え。`RobotExpressive.glb` と手続きダンス層をステージから外し、`src/dance/mixamo.ts` で BPM 追従・クロスフェード・接地正規化・横方向ルートモーション除去を実装。`public/models/mixamo/` に出典を記録し、`scripts/test-mixamo.mjs` を追加。ヘッドレス Chrome でダンス中の見た目と JS エラーなしを確認。
 - 2026-11-08: ダンス核を実装。`src/dance/dance.ts` に base groove＋8 atom＋4 style の純関数を置き、`DanceStage.tsx` から GLTF の sanitize 済みボーンへ加算。Gemini の `dance` ツールに style / moves を追加。`scripts/test-dance.mjs` と `pnpm test` を追加し、ヘッドレス Chrome で腕・腰・spin の反映を確認。
@@ -55,57 +57,3 @@
 - 2026-11-06: AI DJ スパイク。ShowAction、MusicTransport、歩行、プロシージャル身体、Gemini Live MC/Director を接続。8小節 MC、6ツール、ミュート、モバイル UI を実装。
 
 > 以下はロボット＋手続き層だった頃の改善メモ。2026-11-12 に Mixamo のモーションキャプチャへ置き換え済み。現在のダンスはクリップ主体で、このメモの「二重駆動をやめる」「足を固定する」は解消済み。
-
-ダンスの「精度」は、たぶん2つに分けた方がいいです。
-1. 拍との精度（ズレない）：BPM/拍グリッドでほぼ解決済み  
-2. 見た目の精度（ダサくない）：振付・接地・重心・遷移の問題で、今ここが死んでます
-一番効く順番はこれです。
-1. 二重駆動をやめる
-今は「Danceクリップ」＋「サイン波の手続き層」を同時に動かしています。  
-これは関節がケンカして、浮く・捻れる・首が抜けるの原因になります。
-- クリップ主体なら、手続き層は微小な揺れだけ
-- 手続き主体なら、クリップの脚・体幹・首は切る
-どちらかに寄せるだけでかなりマシになります。
-2. サイン波をやめて「8カウントのポーズ表」にする
-sin()で関節を揺らすのは、踊りではなく揺れです。  
-最低限、
-beat 1: 左に体重、右腕を上げる
-beat 2: 沈む
-beat 3: 右に体重、左腕を上げる
-beat 4: 戻る
-のようなポーズのキーフレームをJSONで持ち、拍に合わせて補間する。  
-これで「振付」になります。4拍ではなく8拍・16拍で組むと踊りに見えます。
-3. 足を固定する（一番デカい）
-今のモデルは Foot.L/R が脚とは別ボーンなので、脚を曲げると足が置いてけぼりになります。  
-なので、
-- 支持足のFootボーンを床に固定
-- 膝の向きを合わせる
-- 腰の高さを足に合わせて下げる
-という簡易IKが必要です。これがないと、どんなにポーズを良くしても浮いて見えます。
-4. 重心移動とタメを作る
-- 踏む前に逆側へ体重を預ける（anticipation）
-- 着地で少し沈む
-- 腕は胴より0.1〜0.2拍遅れて追従
-- ポーズの終わりに小さくオーバーシュートして戻す
-これを入れるだけで一気に人間っぽくなります。
-5. 小節の継ぎ目を補間する
-小節頭でポーズを切り替えるとカクッとします。  
-前のポーズから0.1〜0.2拍かけてクロスフェードすると滑らかになります。
-6. 曲ごとに8小節単位で振付を割る
-ピアノ曲はBPMが固定でもフレーズが違います。  
-完全ランダムや手続きだけでは限界があるので、
-- 8小節ごとのセクション
-- 各セクションにポーズ列を割り当て
-- サビだけ動きを大きくする
-のが現実的です。
-7. 数値で見る
-固定カメラで動画を撮って、
-- 足の滑り距離
-- 拍とのズレ
-- 関節角の急変
-- 同じ動きの繰り返し率
-を見ると、目視より速く直せます。
-一番早く品質を上げるなら、CC0/Mixamoのモーキャプ振付を1つ入れて拍同期するのが最短です。  
-手続きで作るなら、次は「8カウントのポーズ表＋簡易足IK」を実装するのが一番効きます。
-今のコードなら、次は choreo.ts にポーズ表を作って、sampleDance をサイン波からキーフレーム補間に置き換えるのが第一歩です。  
-足IKはその次。まだ実装はしていません。

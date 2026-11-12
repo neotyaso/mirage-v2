@@ -109,10 +109,12 @@ export class DanceAudio {
     source.loop = true;
     source.loopStart = 0;
     // ループ末尾の MP3 パディングを拍境界で切って、周回ごとのズレを防ぐ
-    const naturalBeat = 60 / TRACKS[this._track].bpm;
+    const track = TRACKS[this._track];
+    const naturalBeat = 60 / track.bpm;
     const loopEnd = Math.min(this.buffer.duration, Math.round(this.buffer.duration / naturalBeat) * naturalBeat);
     source.loopEnd = Math.max(naturalBeat * 4, loopEnd);
-    source.playbackRate.value = this._bpm / TRACKS[this._track].bpm;
+    const rate = this._bpm / track.bpm;
+    source.playbackRate.value = rate;
     source.connect(this.music!);
     source.start(startAt);
     this.source = source;
@@ -120,9 +122,10 @@ export class DanceAudio {
     this._playing = true;
     this.music?.gain.cancelScheduledValues(this.ctx.currentTime);
     this.music?.gain.setTargetAtTime(this._ducked ? 0.28 : 1, this.ctx.currentTime, 0.06);
-    this.anchor = startAt;
+    // 曲頭の無音を飛ばし、最初のダウンビートから拍グリッドを数える。
+    this.anchor = startAt + track.firstBeat / rate;
     this.anchorBpm = this._bpm;
-    this.nextBeatAt = startAt;
+    this.nextBeatAt = this.anchor;
     this.beatCount = 0;
     if (this.timer === null) this.timer = window.setInterval(() => this.tick(), 25);
   }
@@ -161,11 +164,13 @@ export class DanceAudio {
   /** 描画用の拍位相。音と3Dの揺れを同じクロックに乗せる。 */
   getPhase() {
     if (!this.ctx) return { phase: 0, beat: 0, bar: 0, playing: false };
+    const track = TRACKS[this._track];
     const beats = Math.max(0, ((this.ctx.currentTime - this.anchor) * this.anchorBpm) / 60);
+    const local = beats % (track.bars * 4);
     return {
-      phase: beats % 1,
-      beat: Math.floor(beats) % 4,
-      bar: Math.floor(beats / 4),
+      phase: local % 1,
+      beat: Math.floor(local) % 4,
+      bar: Math.floor(local / 4),
       playing: this._playing,
     };
   }
