@@ -18,6 +18,7 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 - 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
 - MIRAGE ヘッダー、モード／曲／BPM／セクション/style の readout、STOP MUSIC / PLAY MUSIC、SOUND ON / OFF、モバイル対応
 - 開始前の黒背景・白文字オーバーレイ（PLEASE TURN UP THE VOLUME.）
+- テキストから生成したモーション（Modal の PartLock-CMU）を **GENERATE** ボタンで再生。22関節を Mixamo のボーンへリターゲットし、次の小節でダンスへ戻す
 
 **公演の1巡**: ダンス → 音楽停止 → 歩行 → 曲を頭から再開 → ダンス。
 

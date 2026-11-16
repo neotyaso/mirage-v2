@@ -68,6 +68,14 @@ for (const symbol of ["MIXAMO_CLIPS", "clipForStyle", "loadMixamoRig", "normaliz
   assert(src.includes(symbol), `mixamo.ts に ${symbol} がある`);
 }
 
+const generated = readFileSync(path.join(rootDir, "src", "dance", "generated.ts"), "utf8");
+for (const symbol of ["captureRetargetRest", "toGeneratedClip", "retargetWorld"]) {
+  assert(generated.includes(symbol), `generated.ts に ${symbol} がある`);
+}
+const sample = JSON.parse(readFileSync(path.join(rootDir, "public", "motion", "partlock-walk-joints.json"), "utf8"));
+assert(Array.isArray(sample.positions) && sample.positions.length > 0, "PartLock のサンプルに positions がある");
+assert(sample.positions[0].length === 22 && sample.positions[0][0].length === 3, "PartLock のサンプルは 22関節 x 3");
+
 if (failures > 0) {
   console.error(`\n${failures} failure(s)`);
   process.exit(1);

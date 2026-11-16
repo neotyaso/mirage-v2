@@ -18,6 +18,7 @@ import {
   type DanceStyle,
 } from "./dance";
 import { clipForStyle, clipStartOffset, loadMixamoRig, timeScaleForClip } from "./mixamo";
+import { toGeneratedClip, type RetargetRest } from "./generated";
 import { DJ_SYSTEM_PROMPT, DJ_TOOLS, buildMcPrompt } from "./mc";
 import {
   MARKS,
@@ -45,6 +46,7 @@ type StageApi = {
   talk: () => void;
   dance: (input: { bpm?: number; energy?: number; style?: DanceStyle; moves?: DanceMove[] }) => void;
   gesture: (intent: string) => void;
+  generateMotion: (prompt: string, seconds?: number) => void;
   getState: () => ShowState;
 };
 
@@ -411,8 +413,11 @@ export function DanceStage() {
     scene.add(robotRoot);
 
     let mixer: THREE.AnimationMixer | null = null;
+    let retarget: RetargetRest | null = null;
     const actions = new Map<string, THREE.AnimationAction>();
     let current: THREE.AnimationAction | null = null;
+    let generatedAction: THREE.AnimationAction | null = null;
+    let generatedPlaying = false;
     let baseClip = "Idle";
     let desiredClip = "Idle";
     let mode: ShowMode = "idle";
@@ -463,6 +468,29 @@ export function DanceStage() {
       syncSpeed();
     };
 
+    // 生成モーションは1回だけ再生し、次の小節頭でセクションのダンスへ戻す。
+    const playGenerated = (joints: number[][][], label: string) => {
+      if (!mixer || !retarget) return;
+      try {
+        // shortcut: 生成のたびに clip が mixer に残る。連打で問題になったら finished で uncacheClip する。
+        const action = mixer.clipAction(toGeneratedClip("generated", joints, retarget));
+        action.reset();
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+        action.enabled = true;
+        action.setEffectiveWeight(1);
+        action.play();
+        if (current) current.crossFadeTo(action, 0.2, false);
+        else action.fadeIn(0.2);
+        current = action;
+        generatedAction = action;
+        generatedPlaying = true;
+        setClipLabel(label);
+      } catch (error) {
+        console.error("generated motion failed", error);
+      }
+    };
+
     // 小節ごとにセクションを引き、ダンスクリップを小節頭で切り替える。
     // MC の style 指定は、そのセクションの間だけ上書きとして使う。
     const applySection = (bar: number, override?: DanceStyle) => {
@@ -494,6 +522,8 @@ export function DanceStage() {
         autoDance = false;
         setMode("dance");
       }
+      // 生成モーションは最後まで再生し、終わった次の小節でダンスへ戻す。
+      if (generatedPlaying) return;
       if (mode === "dance" && !walkTarget) applySection(bar);
     };
 
@@ -509,6 +539,14 @@ export function DanceStage() {
         if (disposed) return;
         robotRoot.add(rig.model);
         mixer = rig.mixer;
+        retarget = rig.retarget;
+        mixer.addEventListener("finished", (event) => {
+          if (event.action === generatedAction) {
+            generatedPlaying = false;
+            generatedAction = null;
+            setClipLabel(mode === "dance" ? "DANCE" : mode === "walk" ? "WALK" : mode === "talk" ? "TALK" : "IDLE");
+          }
+        });
         for (const [name, action] of rig.actions) actions.set(name, action);
         fadeTo(desiredClip);
       })
@@ -648,6 +686,27 @@ export function DanceStage() {
       },
       gesture: (_intent) => {
         // MC のジェスチャーは今はダンスを止めない。Live 再接続時に専用クリップを足す。
+      },
+      generateMotion: (prompt, seconds = 2) => {
+        const url = import.meta.env.VITE_MOTION_URL;
+        const request = url
+          ? fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: prompt, seconds, format: "joints" }),
+            })
+          : fetch("/motion/partlock-walk-joints.json");
+        void request
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+          })
+          .then((data) => {
+            const positions = data?.positions;
+            if (!Array.isArray(positions) || positions.length === 0) throw new Error("no positions");
+            playGenerated(positions, "GENERATED");
+          })
+          .catch((error) => console.error("generate_motion failed", error));
       },
       getState: () => {
         const phase = audio.getPhase();
@@ -809,6 +868,14 @@ export function DanceStage() {
             <i />
             LIVE
           </span>
+          <button
+            className="dj-icon"
+            onClick={() => apiRef.current?.generateMotion("walk")}
+            aria-label="生成した歩行を再生"
+            title="PartLock-CMU の生成モーション（walk）"
+          >
+            GENERATE
+          </button>
           <button
             className="dj-icon"
             onClick={() => (show.playing ? apiRef.current?.stopMusic(1) : apiRef.current?.playTrack("neon"))}

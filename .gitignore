@@ -19,3 +19,8 @@ tools/img3d/
 
 # 展示パネルPDF: 学籍番号・氏名が記載されているためリポジトリには含めない(手元管理)
 mirage-panels-b4.pdf
+
+# 生成モーションの一時出力
+motion/out/
+# PartLock の大きな重みは Modal Volume に置く
+motion/partlock/weights/*.safetensors

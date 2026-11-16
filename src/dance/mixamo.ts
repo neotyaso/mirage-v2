@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { DanceStyle } from "./dance";
+import { captureRetargetRest, type RetargetRest } from "./generated";
 
 const DIR = "/models/mixamo";
 
@@ -66,11 +67,12 @@ export function normalizeMixamoModel(
   mixer: THREE.AnimationMixer,
   idle: THREE.AnimationAction,
   targetHeight = 1.72,
-) {
+): RetargetRest {
   model.rotation.x = -Math.PI / 2;
   idle.reset().play();
   idle.time = 0.5;
   mixer.update(0);
+  const retarget = captureRetargetRest(model);
 
   const box = measure(model);
   const height = Math.max(box.max.y - box.min.y, 0.001);
@@ -88,12 +90,14 @@ export function normalizeMixamoModel(
   }
   model.updateMatrixWorld(true);
   idle.stop();
+  return retarget;
 }
 
 export type MixamoRig = {
   model: THREE.Object3D;
   mixer: THREE.AnimationMixer;
   actions: Map<string, THREE.AnimationAction>;
+  retarget: RetargetRest | null;
 };
 
 export async function loadMixamoRig(loader: GLTFLoader): Promise<MixamoRig> {
@@ -129,9 +133,9 @@ export async function loadMixamoRig(loader: GLTFLoader): Promise<MixamoRig> {
   }
 
   const idle = actions.get("Idle");
-  if (idle) normalizeMixamoModel(model, mixer, idle);
+  const retarget = idle ? normalizeMixamoModel(model, mixer, idle) : null;
 
-  return { model, mixer, actions };
+  return { model, mixer, actions, retarget };
 }
 
 /**
