@@ -6,10 +6,10 @@ import { Header } from "./components/Header";
 import { StatusProvider } from "./components/StatusContext";
 
 const navItems = [
-  { name: "Dashboard", href: "/" },
-  { name: "Vision", href: "/vision" },
-  { name: "Sessions", href: "/sessions" },
-  { name: "Settings", href: "/settings" },
+  { name: "Dashboard", href: "/studio" },
+  { name: "Vision", href: "/studio/vision" },
+  { name: "Sessions", href: "/studio/sessions" },
+  { name: "Settings", href: "/studio/settings" },
 ];
 
 function Sidebar() {

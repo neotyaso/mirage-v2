@@ -46,7 +46,7 @@
 
 ## 実装済み（2026-11-08）
 
-- `/` を AI DJ ステージに切り替え。`dance.html` は互換エイリアス。
+- Next.js に統合。`/` は会話、`/dance` はダンスステージ、`/studio` は管理ダッシュボード。
 - `ShowAction` と `ShowState`、2曲（NEON DRIVE 112 BPM / PULSE 128 BPM）。
 - 停止フェード、発話ダッキング、拍位相、BPM の `timeScale` 補正。
 - `center / left / right / front` への歩行と到着後の Idle / Dance 復帰。

@@ -44,7 +44,7 @@ export function useVisionTelemetry({
       const box = boxes[primaryFaceIndexRef.current ?? 0] ?? null;
       const expr = expressionRef.current;
       busy = true;
-      void fetch("/studio/api/vision/live", {
+      void fetch("/api/vision/live", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

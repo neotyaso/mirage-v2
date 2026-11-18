@@ -491,7 +491,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
     // キーではなく Studio 発行の短命トークンで接続する（D-018）
     let apiKey: string;
     try {
-      const res = await fetch("/studio/api/live/token", {
+      const res = await fetch("/api/live/token", {
         method: "POST",
         signal: AbortSignal.timeout(8000),
       });

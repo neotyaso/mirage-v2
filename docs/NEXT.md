@@ -6,13 +6,13 @@
 
 ## 今どこにいるか
 
-- `/` が **Gemini Live と話せる会話ページ**。`/dance.html` が **ダンスステージ**。いまは別ページ。
+- `/` が **Gemini Live と話せる会話ページ**。`/dance` が **ダンスステージ**（`/dance.html` は rewrite）。いまは別ページ。
 - 身体は **Mixamo の Michelle ＋ モーションキャプチャのダンスクリップ**。`src/dance/mixamo.ts` が読み込み・BPM 追従・クロスフェード・接地正規化を持つ。`RobotExpressive.glb` と手続きダンス層はステージから外した。
 - `ShowAction` / `ShowState`、Pixabay の無料楽曲「Dance Electro 120 bpm」1曲、停止フェード、ダッキング、拍位相、BPM 同期、歩行が動く。
 - ダンスクリップは `Robot_Hip_Hop_Dance`（hype）/ `Twist_Dance`（cool）/ `Macarena_Dance`（cute）/ `House_Dancing`（chill）。`Breakdance_Uprock`（2.25秒で背を向ける短いループ）と `Jazz_Dancing`（Tポーズのまま同じキックを繰り返す壊れたクリップ）は 2026-11-12 に差し替えた。`src/dance/dance.ts` の手続きサンプラーは未使用で、style/moves の型と `mergeDanceCue` だけ MC ツール用に残している。
 - ビートグリッドは **120 BPM / 先頭ダウンビート 0.987s / 60小節**。`show.ts` の `sectionAtBar` が intro / build / drop / break / outro を返し、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭に量子化する。
 - ヘッダーに **STOP MUSIC / PLAY MUSIC** ボタン、開始前に黒背景・白文字の **PLEASE TURN UP THE VOLUME.** オーバーレイを置いた。
-- **生成モーション**: Modal の GPU で **PartLock-CMU** を動かし、`generate_motion` の土台を作った。`src/dance/generated.ts` が22関節を Mixamo のローカル回転に変換し、ヘッダーの **GENERATE** ボタンで1回再生して次の小節でダンスへ戻す。エンドポイントは `VITE_MOTION_URL`、未設定時は `public/motion/partlock-walk-joints.json` のサンプル。
+- **生成モーション**: Modal の GPU で **PartLock-CMU** を動かし、`generate_motion` の土台を作った。`studio/src/dance/generated.ts` が22関節を Mixamo のローカル回転に変換し、ヘッダーの **GENERATE** ボタンで1回再生して次の小節でダンスへ戻す。エンドポイントは `NEXT_PUBLIC_MOTION_URL`、未設定時は `studio/public/motion/partlock-walk-joints.json` のサンプル。
 - `scripts/test-mixamo.mjs` で GLB、`scripts/test-audio.mjs` で音源、`scripts/test-sections.mjs` でビートグリッドとセクション割りを確認。`scripts/test-dance.mjs` は旧手続き核のテストとして残っている。
 - **会話ページ**: `src/talk/TalkStage.tsx` が `useGeminiLive` を `capture: true` で使い、START で Gemini Live に接続する。字幕・テロップは出さない。Studio（:3000）と `GEMINI_API_KEY` が必要。ヘッドレス Chrome で `listening` まで確認済み。
 - ダンスステージの MC は現在**接続していない**。`useGeminiLive` とツールは残しているが、`startSession` から `connect()` しない。ステージはダンスのみ。
@@ -21,7 +21,7 @@
 
 ## 次にやること
 
-0. **会話とダンスの接続** — 会話ページの Gemini に `dance` / `stop_dance` ツールを渡し、次の小節頭でダンスへ切り替える。まずは `/` の中で身体を出すのか、`/dance.html` へ遷移するのかを決める。50/50 の対話型パフォーマーを目指すなら、同じ身体（VRM）で会話とダンスを通す方向を検討する。
+0. **会話とダンスの接続** — 会話ページの Gemini に `dance` / `stop_dance` ツールを渡し、次の小節頭でダンスへ切り替える。まずは `/` の中で身体を出すのか、`/dance` へ遷移するのかを決める。50/50 の対話型パフォーマーを目指すなら、同じ身体（VRM）で会話とダンスを通す方向を検討する。
 0.5. **生成モーションの本番接続** — `GENERATE` ボタンを MC の `generate_motion` ツールから呼べるようにする。Modal のエンドポイントに認証（トークンかプロキシ）を足し、`seconds` を小節に合わせて丸める。CMU にない動きが必要なら FloodDiffusion / Kimodo を比較する。
 1. **DJ-8 残り** — キック／スネア／オンセットに合わせた首・腕・ライト・カメラのアクセントを足す。任意曲を入れる段階で自動ビート解析も検討する。
 2. **DJ-9 残り** — `ShowState` / `ShowAction` / BPM 同期 / キュー計算を純関数に切り出してテストする。CI、30分稼働、latency、MC の発話回数を計測する。
@@ -54,7 +54,7 @@
 
 ## 直近の作業ログ
 
-- 2026-11-18: **会話ページとダンスステージを分離**。`/` を `src/talk/TalkStage.tsx`（Gemini Live / S2S / マイク入力 / 字幕なし）に変更し、`/dance.html` をダンス専用にした。会話ページは START で `/studio/api/live/token` から短命トークンを取り、`useGeminiLive` で接続する。ヘッドレス Chrome（fake mic）で `listening` まで確認。ダンスステージの MC は未接続のまま。ダンスページの MIRAGE ロゴから `/` に戻れる。
+- 2026-11-18: **Next.js に統合**。`studio/` を `mirage` アプリ本体にし、`app/(stage)/page.tsx` = 会話、`app/(stage)/dance/page.tsx` = ダンス、`app/studio/` = 管理ダッシュボード、`app/api/` = トークン・検索・天気・Vision に整理した。Vite / ルート `src` / ルート `public` / `index.html` / `dance.html` は削除し、`/dance.html` は `/dance` に rewrite。`useGeminiLive` は `/api/live/token` を直接叩き、`NEXT_PUBLIC_MOTION_URL` で Modal の PartLock に接続する。ヘッドレス Chrome で会話の `listening`、ダンスの `GENERATE` まで確認。
 - 2026-11-15: **PartLock-CMU を Modal（A10G）にデプロイ**。`motion/partlock_modal.py` が `joints` / `vrm` を返し、CORS を許可、`scaledown_window=60`・`min_containers` なしでアイドル時は停止する。`src/dance/generated.ts` で22関節を Mixamo のローカル回転に変換（Idle 立ち姿を rest、フレーム0との差分を適用）。`DanceStage` の **GENERATE** ボタンで生成 walk を1回再生し、次の小節でダンスへ戻す。ヘッドレス Chrome で実エンドポイント経由の再生を確認。エンドポイントは未認証なので公開前に認証を追加する。
 - 2026-11-12: ダンスの見た目バグを修正。`Breakdance_Uprock`（2.25秒・胸元を指すジェスチャ・背を向ける短いループ）を `Twist_Dance` に、`Jazz_Dancing`（Tポーズのまま同じキックを繰り返す）を `Macarena_Dance` に差し替えた。`timeScaleForClip` を「クリップ1周が整数小節になる速度」に変更し、ループの継ぎ目を小節頭へ戻した。ヘッダーに STOP MUSIC / PLAY MUSIC、開始前に黒背景・白文字の音量オーバーレイを追加。ヘッドレス Chrome で intro / drop / break / build / outro の各クリップと停止ボタンを確認。
 - 2026-11-12: 曲の解析から **先頭ダウンビート 0.987s / 120 BPM / 60小節** のビートグリッドを `show.ts` に持たせ、`DanceAudio` の拍・小節をこの頭出しに合わせた。`sectionAtBar` で intro / drop / break / build / outro を引き、`DanceStage` が小節頭でセクションのクリップへ切り替える。`playTrack` / `stopMusic` / `dance` は次の小節頭まで待って実行。ヘッドレス Chrome で 8/16/24小節の切替と、停止が小節線に乗ることを確認。`scripts/test-sections.mjs` を追加。

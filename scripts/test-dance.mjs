@@ -1,4 +1,4 @@
-// ダンス核（src/dance/dance.ts）の自己テスト。node だけで実行する。
+// ダンス核（studio/src/dance/dance.ts）の自己テスト。node だけで実行する。
 // TS をその場で JS に変換し、拍・小節・style・moves の振る舞いを検証する。
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -9,7 +9,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const danceFile = path.join(rootDir, "src", "dance", "dance.ts");
+const danceFile = path.join(rootDir, "studio", "src", "dance", "dance.ts");
 
 let failures = 0;
 function assert(cond, msg) {

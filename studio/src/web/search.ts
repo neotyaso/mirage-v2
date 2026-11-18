@@ -11,7 +11,7 @@ const TIMEOUT_SEARCH_MS = 8000;
 const TIMEOUT_FETCH_MS = 20000;
 
 export async function webSearch(query: string): Promise<WebSearchResult[]> {
-  const res = await fetch(`/studio/api/web/search?q=${encodeURIComponent(query)}`, {
+  const res = await fetch(`/api/web/search?q=${encodeURIComponent(query)}`, {
     signal: AbortSignal.timeout(TIMEOUT_SEARCH_MS),
   });
   if (!res.ok) throw new Error(`search ${res.status}`);
@@ -20,7 +20,7 @@ export async function webSearch(query: string): Promise<WebSearchResult[]> {
 }
 
 export async function fetchPage(url: string): Promise<string> {
-  const res = await fetch("/studio/api/web/fetch", {
+  const res = await fetch("/api/web/fetch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),

@@ -10,7 +10,7 @@ export interface WeatherReport {
 }
 
 export async function getWeather(): Promise<WeatherReport> {
-  const res = await fetch("/studio/api/web/weather", { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  const res = await fetch("/api/web/weather", { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) throw new Error(`weather ${res.status}`);
   return (await res.json()) as WeatherReport;
 }

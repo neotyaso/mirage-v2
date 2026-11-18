@@ -1,27 +1,24 @@
 #!/usr/bin/env node
 /**
  * mirage one-shot launcher (Windows / M1 Mac 共通)。
- * 1コマンドで、vite(:5173) / Studio(:3000) / 検索 API(:4479) / 本文取得(:11235) を起動する。
+ * 1コマンドで、MIRAGE Next.js(:3000) / 検索 API(:4479) / 本文取得(:11235) を起動する。
  * すでに動いているものは再利用する。Ollama（:11434）は任意。
  */
-import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const VITE_URL = "http://localhost:5173/";
 const OLLAMA_URL = "http://localhost:11434/api/tags";
-const STUDIO_URL = "http://localhost:3000/";
+const APP_URL = "http://localhost:3000/";
 const DDGS_URL = "http://127.0.0.1:4479/health";
 const CRAWL_URL = "http://127.0.0.1:11235/openapi.json";
 
 // scripts/health-check.mjs と共有する唯一のURL定義。追加・変更はここだけに行う。
 export const SERVICE_URLS = {
-  vite: VITE_URL,
+  app: APP_URL,
   ollama: OLLAMA_URL,
-  studio: STUDIO_URL,
   ddgs: DDGS_URL,
   crawl4ai: CRAWL_URL,
 };
@@ -99,9 +96,9 @@ async function main() {
   if (!(await health(OLLAMA_URL))) console.log("[ -- ] Ollamaなし。フォールバック LLM は無効（Gemini Live のみ）");
   else console.log("[ OK ] Ollama 応答あり");
 
-  await ensure("Studio (:3000)", STUDIO_URL, () =>
+  await ensure("MIRAGE (:3000)", APP_URL, () =>
     startService(
-      "studio",
+      "mirage",
       process.execPath,
       [path.join(root, "studio", "node_modules", "next", "dist", "bin", "next"), "dev"],
       path.join(root, "studio"),
@@ -129,31 +126,6 @@ async function main() {
   if (await health(DDGS_URL)) {
     void fetch(`${DDGS_URL.replace("/health", "")}/search/text?query=warmup&max_results=1`).catch(() => {});
   }
-
-  if (await health(VITE_URL)) {
-    console.log("[ OK ] vite 起動済み。再利用する");
-    return;
-  }
-  console.log("starting vite (:5173)...");
-  // npx.cmd直spawnはWindowsでEINVALになるため、nodeでvite binを直接叩く
-  const viteBin = path.join(root, "node_modules", "vite", "bin", "vite.js");
-  if (!fs.existsSync(viteBin)) {
-    console.error("[ NG ] viteがない。`pnpm install` を実行");
-    process.exit(1);
-    return;
-  }
-  await new Promise((resolve) => {
-    const vite = spawn(process.execPath, [viteBin], { cwd: root, stdio: "inherit", env: process.env });
-    vite.on("exit", (code, signal) => {
-      resolve();
-      process.exitCode = code ?? (signal ? 130 : 0);
-    });
-    vite.on("error", (err) => {
-      console.error(`[vite] 起動失敗: ${err.message}`);
-      process.exitCode = 1;
-      resolve();
-    });
-  });
 }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);

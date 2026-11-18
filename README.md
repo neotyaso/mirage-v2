@@ -3,7 +3,7 @@
 3D キャラクターが音楽に合わせて踊る **AI DJ ステージ**。LLM が公演の流れを考える設計だが、現在はダンス主体で MC は休止中。
 Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTransport）・身体（モーションエンジン）を別の時計で動かす** ことを核にしている。
 
-`/` は **Gemini Live と話せる会話ページ**、`/dance.html` は **ダンスステージ**。いまは別ページに分けている。
+`/` は **Gemini Live と話せる会話ページ**、`/dance` は **ダンスステージ**（`/dance.html` は rewrite）。いまは別ページに分けている。
 
 > 2026-11-08 にレセプション本線を退役し、AI DJ 本線へ切り替えた（[docs/decisions.md](docs/decisions.md) D-023）。
 > 当時の受付要件は [docs/legacy/reception-requirements.md](docs/legacy/reception-requirements.md) にアーカイブしている。
@@ -27,19 +27,19 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 ## 起動
 
 ```bash
-pnpm install
+pnpm install                 # ルート: テスト用
+cd studio && pnpm install    # アプリ本体
+cp .env.example .env         # GEMINI_API_KEY を書く
+cd ..
 pnpm dev
-# 会話: http://localhost:5173/
-# ダンス: http://localhost:5173/dance.html
+# 会話:    http://localhost:3000/
+# ダンス:  http://localhost:3000/dance
+# Studio:  http://localhost:3000/studio
 ```
 
-会話ページを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studio が無くてもダンスステージは動く。
+`/dance.html` は `/dance` に rewrite される。
 
-```bash
-cd studio && pnpm install --ignore-workspace
-cp studio/.env.example studio/.env   # GEMINI_API_KEY を書く
-pnpm dev
-```
+会話ページを使うには `GEMINI_API_KEY` が必要。ダンスステージはキーなしでも動く。`studio/.env.local` に `NEXT_PUBLIC_MOTION_URL` を置くと、GENERATE が Modal の PartLock を呼ぶ。未設定なら `studio/public/motion/partlock-walk-joints.json` のサンプルを再生する。
 
 ## アーキテクチャ
 
@@ -79,18 +79,13 @@ LLM に毎フレームの関節を出させない。身体は前の cue を続�
 
 ```
 mirage-v2/
-├── index.html                  # / の会話ページ
-├── dance.html                  # /dance.html のダンスステージ
-├── src/
-│   ├── talk/                   # TalkStage（Gemini Live / 字幕なし）
-│   ├── dance/                  # DanceStage / dance核 / show / audio / mc / UI
-│   ├── hooks/
-│   │   ├── useGeminiLive.ts    # Live 接続・カスタムプロンプト／ツール
-│   │   ├── useFaceDetection.ts # 観客入力の再利用資産
-│   │   └── useVision*.ts       # Studio のカメラ監視
-│   ├── vision/                 # 表情・フレーム取得
-│   └── tracking/               # 通行人トラッキング（再利用資産）
-├── studio/                     # Next.js。Live 短命トークン・API 中継
+├── studio/                     # Next.js アプリ本体
+│   ├── app/(stage)/            # / = 会話、/dance = ダンス
+│   ├── app/studio/             # /studio 管理ダッシュボード
+│   ├── app/api/                # Liveトークン・検索・天気・Vision
+│   ├── src/                    # talk / dance / hooks / vision / tracking / web / data
+│   └── public/                 # models / audio / motion / mediapipe
+├── motion/                     # Modal PartLock-CMU サーバー
 ├── docs/                       # 要件・決定・ロードマップ・設計
 │   └── legacy/                 # レセプション時代のアーカイブ
 ├── records/                    # 作業ログ・ポートフォリオ
@@ -100,7 +95,7 @@ mirage-v2/
 ## テスト
 
 ```bash
-pnpm build       # tsc --noEmit && vite build
+pnpm build       # Next.js build（studio/）
 pnpm test        # トラッキング＋Mixamo アセット＋音源＋ビートグリッド／セクション＋旧ダンス核の自己テスト
 ```
 
@@ -110,7 +105,7 @@ Mixamo アセットのテストは `scripts/test-mixamo.mjs`（GLB の存在・�
 
 1. `pnpm build` が通る。
 2. `/` で会話ページが起動し、START で Gemini Live に接続できる。
-3. `/dance.html` で 3D ステージが起動する。
+3. `/dance` で 3D ステージが起動する。
 4. 「START SESSION」で音楽とダンスが始まる。
 5. キャラクターが床に接地し、BPM に合わせてダンスがループする。
 6. SOUND ON / OFF が効く。

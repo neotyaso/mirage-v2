@@ -1,7 +1,7 @@
 "use client";
 
-import { MOCK_INTERACTIONS } from "@/app/components/constants";
-import { InteractionTable } from "@/app/components/InteractionTable";
+import { MOCK_INTERACTIONS } from "@/app/studio/components/constants";
+import { InteractionTable } from "@/app/studio/components/InteractionTable";
 
 export default function SessionsPage() {
   return (

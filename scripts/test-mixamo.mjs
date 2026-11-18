@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const modelDir = path.join(rootDir, "public", "models", "mixamo");
+const modelDir = path.join(rootDir, "studio", "public", "models", "mixamo");
 
 let failures = 0;
 function assert(cond, msg) {
@@ -63,16 +63,16 @@ assert(
   "Michelle.glb に SambaDance がある",
 );
 
-const src = readFileSync(path.join(rootDir, "src", "dance", "mixamo.ts"), "utf8");
+const src = readFileSync(path.join(rootDir, "studio", "src", "dance", "mixamo.ts"), "utf8");
 for (const symbol of ["MIXAMO_CLIPS", "clipForStyle", "loadMixamoRig", "normalizeMixamoModel"]) {
   assert(src.includes(symbol), `mixamo.ts に ${symbol} がある`);
 }
 
-const generated = readFileSync(path.join(rootDir, "src", "dance", "generated.ts"), "utf8");
+const generated = readFileSync(path.join(rootDir, "studio", "src", "dance", "generated.ts"), "utf8");
 for (const symbol of ["captureRetargetRest", "toGeneratedClip", "retargetWorld"]) {
   assert(generated.includes(symbol), `generated.ts に ${symbol} がある`);
 }
-const sample = JSON.parse(readFileSync(path.join(rootDir, "public", "motion", "partlock-walk-joints.json"), "utf8"));
+const sample = JSON.parse(readFileSync(path.join(rootDir, "studio", "public", "motion", "partlock-walk-joints.json"), "utf8"));
 assert(Array.isArray(sample.positions) && sample.positions.length > 0, "PartLock のサンプルに positions がある");
 assert(sample.positions[0].length === 22 && sample.positions[0][0].length === 3, "PartLock のサンプルは 22関節 x 3");
 

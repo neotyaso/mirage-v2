@@ -44,7 +44,7 @@ export function useVisionRtcSender(
       const stream = videoRef.current?.srcObject as MediaStream | null;
       if (!stream || stream.getVideoTracks().length === 0) return;
 
-      const res = await fetch("/studio/api/vision/rtc/offer", { cache: "no-store" });
+      const res = await fetch("/api/vision/rtc/offer", { cache: "no-store" });
       if (res.status === 204 || !res.ok) return;
       const { id, sdp } = (await res.json()) as { id: string; sdp: string };
       if (stopped) return;
@@ -60,7 +60,7 @@ export function useVisionRtcSender(
       await waitIce(local);
       if (stopped || pc !== local) return;
 
-      await fetch("/studio/api/vision/rtc/answer", {
+      await fetch("/api/vision/rtc/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, sdp: local.localDescription?.sdp }),

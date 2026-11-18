@@ -1,7 +1,7 @@
 # PartLock-CMU on Modal
 
 PartLock-CMU（Apache 2.0）を Modal の GPU で動かし、テキストから22関節のモーションを生成する。
-MIRAGE 側は `src/dance/generated.ts` で Mixamo のローカル回転に変換して再生する。
+MIRAGE 側は `studio/src/dance/generated.ts` で Mixamo のローカル回転に変換して再生する。
 
 - モデル: https://huggingface.co/Yakimask/PartLock-CMU
 - 出力: 30fps / 22関節（SMPL順）
@@ -13,19 +13,18 @@ MIRAGE 側は `src/dance/generated.ts` で Mixamo のローカル回転に変換
 uvx --with pydantic modal deploy motion/partlock_modal.py
 ```
 
-表示された URL の末尾に `/generate` を付けて、`frontend/.env.local` ではなく
-リポジトリ直下の `.env.local` に置く（Vite が読む）:
+表示された URL の末尾に `/generate` を付けて、`studio/.env.local` に置く（Next.js が読む）:
 
 ```env
-VITE_MOTION_URL=https://<workspace>--mirage-partlock-api.<region>.modal.run/generate
+NEXT_PUBLIC_MOTION_URL=https://<workspace>--mirage-partlock-api.<region>.modal.run/generate
 ```
 
-未設定のときは `public/motion/partlock-walk-joints.json` のサンプルを再生する。
+未設定のときは `studio/public/motion/partlock-walk-joints.json` のサンプルを再生する。
 
 ## API
 
 ```bash
-curl -X POST "$VITE_MOTION_URL" \
+curl -X POST "$NEXT_PUBLIC_MOTION_URL" \
   -H 'Content-Type: application/json' \
   -d '{"text":"walk","seconds":2,"format":"joints"}'
 ```

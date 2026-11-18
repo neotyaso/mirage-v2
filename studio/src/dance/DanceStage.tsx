@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -30,7 +32,7 @@ import {
   type ShowState,
   type TrackId,
 } from "./show";
-import "./dance.css";
+
 
 const PLATFORM_TOP = 0.14;
 const BASE_BPM = TRACKS.neon.bpm;
@@ -688,7 +690,7 @@ export function DanceStage() {
         // MC のジェスチャーは今はダンスを止めない。Live 再接続時に専用クリップを足す。
       },
       generateMotion: (prompt, seconds = 2) => {
-        const url = import.meta.env.VITE_MOTION_URL;
+        const url = process.env.NEXT_PUBLIC_MOTION_URL;
         const request = url
           ? fetch(url, {
               method: "POST",

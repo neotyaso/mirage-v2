@@ -1,6 +1,7 @@
+"use client";
+
 import { useCallback, useState } from "react";
 import { useGeminiLive, type GeminiState } from "../hooks/useGeminiLive";
-import "./talk.css";
 
 const TALK_PROMPT =
   "あなたは MIRAGE の対話パートナーです。日本語で、短く自然に話します。" +

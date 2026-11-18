@@ -1,29 +1,17 @@
 {
   "name": "mirage",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:front": "vite",
+    "dev:app": "pnpm --dir studio dev",
     "health": "node scripts/health-check.mjs",
     "test": "node scripts/test-tracking.mjs && node scripts/test-mixamo.mjs && node scripts/test-audio.mjs && node scripts/test-sections.mjs && node scripts/test-dance.mjs",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@google/genai": "^2.22.0",
-    "@mediapipe/tasks-vision": "^0.10.35",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "three": "^0.185.0"
+    "build": "pnpm --dir studio build",
+    "start": "pnpm --dir studio start"
   },
   "devDependencies": {
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@types/three": "^0.185.0",
-    "@vitejs/plugin-react": "^6.0.3",
-    "typescript": "^6.0.3",
-    "vite": "^8.1.0"
+    "typescript": "^6.0.3"
   }
 }

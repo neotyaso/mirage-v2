@@ -1,2 +1,8 @@
 allowBuilds:
-  unrs-resolver: set this to true or false
+  '@google/genai': true
+  protobufjs: true
+  unrs-resolver: true
+onlyBuiltDependencies:
+  - "@google/genai"
+  - protobufjs
+  - unrs-resolver

@@ -43,14 +43,14 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 | 項目 | 現状 | 実装箇所 |
 | --- | --- | --- |
-| エントリ | `/` が AI DJ ステージ。`/dance.html` は互換エイリアス | `index.html` / `dance.html` / `src/dance/main.tsx` |
-| 3D ステージ | Three.js、Mixamo の人間キャラ、Bloom、粒子、レスポンシブ | `src/dance/DanceStage.tsx` |
-| 公演状態 | `ShowAction` / `ShowState`、1曲、ステージマーク | `src/dance/show.ts` |
-| 音楽 | 無料楽曲1曲の Web Audio 再生、停止フェード、ダッキング、拍位相、BPM、先頭拍オフセット、小節ごとのセクション | `src/dance/audio.ts` / `src/dance/show.ts` |
-| 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。セクションの style ごとにクリップを小節頭で選び、BPM に `timeScale` を合わせる | `src/dance/mixamo.ts` / `src/dance/DanceStage.tsx` |
-| 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `src/dance/DanceStage.tsx` |
-| MC / Director | Gemini Live のコードは残るが、現在は未接続（ダンスのみ）。DJ 人格・8小節ごとの判断・ツール実行は休眠 | `src/dance/mc.ts` / `src/hooks/useGeminiLive.ts` |
-| 観客入力 | 未接続。カメラ・表情・トラッキングの資産は残している | `src/hooks/useFaceDetection.ts` / `src/vision/expression.ts` / `src/tracking/` |
+| エントリ | `/` が会話、`/dance` がダンス、`/studio` が管理ダッシュボード | `studio/app/(stage)/` / `studio/app/studio/` |
+| 3D ステージ | Three.js、Mixamo の人間キャラ、Bloom、粒子、レスポンシブ | `studio/src/dance/DanceStage.tsx` |
+| 公演状態 | `ShowAction` / `ShowState`、1曲、ステージマーク | `studio/src/dance/show.ts` |
+| 音楽 | 無料楽曲1曲の Web Audio 再生、停止フェード、ダッキング、拍位相、BPM、先頭拍オフセット、小節ごとのセクション | `studio/src/dance/audio.ts` / `studio/src/dance/show.ts` |
+| 身体 | Mixamo の Michelle＋モーションキャプチャのダンス。セクションの style ごとにクリップを小節頭で選び、BPM に `timeScale` を合わせる | `studio/src/dance/mixamo.ts` / `studio/src/dance/DanceStage.tsx` |
+| 歩行 | `center / left / right / front` へルート移動。到着後に Idle / Dance へ戻る | `studio/src/dance/DanceStage.tsx` |
+| MC / Director | Gemini Live のコードは残るが、現在は未接続（ダンスのみ）。DJ 人格・8小節ごとの判断・ツール実行は休眠 | `studio/src/dance/mc.ts` / `studio/src/hooks/useGeminiLive.ts` |
+| 観客入力 | 未接続。カメラ・表情・トラッキングの資産は残している | `studio/src/hooks/useFaceDetection.ts` / `studio/src/vision/expression.ts` / `studio/src/tracking/` |
 | Studio | Live 短命トークン、検索・天気・vision の API 中継 | `studio/app/api/` |
 | 生成 special | 未着手 | — |
 | テスト | トラッキング、Mixamo GLB、音源、ビートグリッド／セクション、旧ダンス核の自己テスト | `scripts/test-tracking.mjs` / `scripts/test-mixamo.mjs` / `scripts/test-audio.mjs` / `scripts/test-sections.mjs` / `scripts/test-dance.mjs` |
@@ -130,7 +130,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### 3-7. UI / 運用
 
-- `/` は会話ページ（Gemini Live / S2S / マイク入力 / 字幕なし）、`/dance.html` はダンスステージとして分離する。
+- `/` は会話ページ（Gemini Live / S2S / マイク入力 / 字幕なし）、`/dance` はダンスステージとして分離する（`/dance.html` は rewrite）。
 - ステージ上に現在のモード、曲、BPM、セクション/style を表示する。
 - MC の発話をテキストでも表示する。
 - `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` のクイック操作を用意する。
@@ -181,16 +181,16 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 | ファイル | 内容 |
 | --- | --- |
-| `src/dance/DanceStage.tsx` | Three.js シーン、公演状態、歩行、ボーン適用、UI、MC 接続 |
-| `src/dance/dance.ts` | ダンス核。拍・小節・style・moves から姿勢を返す純関数 |
-| `src/dance/show.ts` | `ShowAction` / `ShowState`、曲、ステージマーク |
-| `src/dance/audio.ts` | 無料楽曲1曲の再生、停止フェード、ダッキング、拍位相、BPM |
-| `src/dance/mc.ts` | DJ プロンプト、Gemini Live ツール、MC プロンプト |
-| `src/dance/dance.css` | ステージ UI |
-| `src/hooks/useGeminiLive.ts` | Live 接続、カスタムプロンプト／ツール、`capture:false`、`prompt()`、ミュート |
-| `src/hooks/useFaceDetection.ts` | 顔検出・距離・表情（観客入力の再利用資産） |
-| `src/vision/expression.ts` | 表情スコアの解釈 |
-| `src/tracking/` | 通行人トラッキングとイベントログ（再利用資産） |
+| `studio/src/dance/DanceStage.tsx` | Three.js シーン、公演状態、歩行、ボーン適用、UI、MC 接続 |
+| `studio/src/dance/dance.ts` | ダンス核。拍・小節・style・moves から姿勢を返す純関数 |
+| `studio/src/dance/show.ts` | `ShowAction` / `ShowState`、曲、ステージマーク |
+| `studio/src/dance/audio.ts` | 無料楽曲1曲の再生、停止フェード、ダッキング、拍位相、BPM |
+| `studio/src/dance/mc.ts` | DJ プロンプト、Gemini Live ツール、MC プロンプト |
+| `studio/src/dance/dance.css` | ステージ UI |
+| `studio/src/hooks/useGeminiLive.ts` | Live 接続、カスタムプロンプト／ツール、`prompt()`、ミュート。会話ページは `capture:true`、ダンスMCは `capture:false` |
+| `studio/src/hooks/useFaceDetection.ts` | 顔検出・距離・表情（観客入力の再利用資産） |
+| `studio/src/vision/expression.ts` | 表情スコアの解釈 |
+| `studio/src/tracking/` | 通行人トラッキングとイベントログ（再利用資産） |
 | `studio/app/api/live/token/route.ts` | Live 用短命トークン |
 | `public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは同ディレクトリの README） |
 

@@ -1,5 +1,5 @@
 // tracking 基盤の簡易自己テスト（node のみで実行可。vitest / tsx 不要）。
-// 方針: node_modules の typescript で src/tracking/*.ts の実物を
+// 方針: node_modules の typescript で studio/src/tracking/*.ts の実物を
 // その場で JS にトランスパイル（一時ディレクトリ経由で import）して振る舞いを検証する。
 // TS ソースが読めない/変換できない場合はテキスト契約チェックだけでも失敗理由が分かるようにする。
 
@@ -12,7 +12,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const trackingDir = path.join(rootDir, "src", "tracking");
+const trackingDir = path.join(rootDir, "studio", "src", "tracking");
 
 let failures = 0;
 function assert(cond, msg) {

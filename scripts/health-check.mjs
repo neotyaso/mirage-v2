@@ -2,9 +2,8 @@ import { SERVICE_URLS, health } from "./dev.mjs";
 
 // URL定義・healthの実体は dev.mjs に一本化。ここでは表示名とtimeoutのみ持つ。
 const checks = [
-  { name: "フロントエンド", key: "vite", timeoutMs: 4_000, optional: false },
+  { name: "MIRAGE App", key: "app", timeoutMs: 4_000, optional: false },
   { name: "Ollama(任意)", key: "ollama", timeoutMs: 4_000, optional: true },
-  { name: "Studio(Liveトークン/API)", key: "studio", timeoutMs: 4_000, optional: false },
   { name: "検索API(ddgs・任意)", key: "ddgs", timeoutMs: 4_000, optional: true },
   { name: "本文取得(crawl4ai)", key: "crawl4ai", timeoutMs: 4_000, optional: true },
 ];
@@ -25,7 +24,7 @@ for (const result of results) {
   console.log(`[${icon}] ${result.name.padEnd(20)} ${result.detail} (${result.elapsedMs}ms)`);
 }
 
-console.log("\n[手動確認] カメラ・マイク: http://localhost:5173/ を開き、ブラウザ権限を許可");
+console.log("\n[手動確認] カメラ・マイク: http://localhost:3000/ を開き、ブラウザ権限を許可");
 
 // optional（フォールバック用）は落下しても本体は動くので失敗に数えない
 const failures = results.filter((result) => !result.ok && !result.optional);

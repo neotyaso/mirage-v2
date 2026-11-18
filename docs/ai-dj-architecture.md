@@ -1,7 +1,7 @@
 # AI DJ / 3D Performance Architecture
 
-> 最終更新: 2026-11-12  
-> 状態: **本線**。`/`（`dance.html` は互換エイリアス）で ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンス、手動ビートグリッド＋小節頭のセクション切替まで接続。Gemini Live MC/Director はコードを残して休止中。
+> 最終更新: 2026-11-18  
+> 状態: **本線**。Next.js（`studio/`）に統合。`/` は Gemini Live と話せる会話ページ、`/dance` はダンスステージ、`/studio` は管理ダッシュボード。ダンスは ShowAction、MusicTransport、歩行、Mixamo の人間キャラ＋Mocapダンス、手動ビートグリッド＋小節頭のセクション切替まで接続。ダンスステージの Gemini Live MC/Director はコードを残して休止中。
 > 現状: 音は Pixabay の無料楽曲1曲（Dance Electro 120 bpm / 先頭ダウンビート 0.987s / 60小節）、身体は Mixamo の Michelle＋モーションキャプチャのダンス。`playTrack` / `stopMusic` / `dance` は次の小節頭に量子化。生成special・観客入力・任意曲の自動ビート解析・オンセット連動アクセント・表情・リップシンクは未着手。
 > 関連: 要件は [requirements.md](requirements.md)、着手順は [roadmap.md](roadmap.md)、決定は [decisions.md](decisions.md)（D-022 / D-023）。
 
@@ -584,21 +584,25 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 
 | ファイル | 内容 |
 | --- | --- |
-| `index.html` | 3Dステージのエントリ（`/`）。`dance.html` は互換エイリアス |
-| `src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、Mixamo の再生、UI |
-| `src/dance/show.ts` | `ShowAction` / `ShowState`、1曲、ステージマーク |
-| `src/dance/mc.ts` | DJ用システムプロンプト、Gemini Liveツール、MCプロンプト |
-| `src/dance/audio.ts` | 無料楽曲1曲のWeb Audio再生、停止フェード、ダッキング、拍位相 |
-| `src/dance/mixamo.ts` | Mixamo の読み込み、接地正規化、ルートモーション除去、BPM 追従 |
-| `src/dance/dance.css` | ステージUI（MCパネル含む） |
-| `src/hooks/useGeminiLive.ts` | カスタムプロンプト／ツール／ツール実行／`capture:false`／`prompt()` を追加 |
-| `public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは README） |
-| `public/audio/` | 無料楽曲「Dance Electro 120 bpm - Full」（出典・ライセンスは README） |
-| `vite.config.ts` | `index.html` と `dance.html` をビルド入力に持つ |
+| `studio/app/(stage)/page.tsx` | 会話ページ（`/`） |
+| `studio/app/(stage)/dance/page.tsx` | ダンスステージ（`/dance`、`/dance.html` は rewrite） |
+| `studio/app/studio/` | 管理ダッシュボード（`/studio`） |
+| `studio/app/api/` | Live短命トークン、検索、天気、Vision |
+| `studio/src/dance/DanceStage.tsx` | Three.jsシーン、公演状態、歩行ルート、Mixamo の再生、UI |
+| `studio/src/dance/show.ts` | `ShowAction` / `ShowState`、1曲、ステージマーク |
+| `studio/src/dance/mc.ts` | DJ用システムプロンプト、Gemini Liveツール、MCプロンプト |
+| `studio/src/dance/audio.ts` | 無料楽曲1曲のWeb Audio再生、停止フェード、ダッキング、拍位相 |
+| `studio/src/dance/mixamo.ts` | Mixamo の読み込み、接地正規化、ルートモーション除去、BPM 追従 |
+| `studio/src/dance/generated.ts` | PartLock の22関節を Mixamo のローカル回転へ変換 |
+| `studio/src/talk/TalkStage.tsx` | 会話ページのUI（字幕なし、オーブ） |
+| `studio/src/hooks/useGeminiLive.ts` | カスタムプロンプト／ツール／ツール実行／`prompt()`。会話ページは `capture:true`、ダンスMCは `capture:false` |
+| `studio/public/models/mixamo/` | Mixamo の Michelle＋ダンスクリップ（出典・ライセンスは README） |
+| `studio/public/audio/` | 無料楽曲「Dance Electro 120 bpm - Full」（出典・ライセンスは README） |
 
 ### 実装メモ
 
-- **MCは出力専用**。`capture:false` でマイクを開かないため、スピーカーの音を拾わない。観客との双方向会話は、音楽の回り込み対策を設計してから足す。
+- **会話ページは双方向**。`/` の `TalkStage` は `capture:true` でマイクを開き、Gemini Live と S2S で話す。字幕は出さない。
+- **ダンスMCは出力専用**。ダンスステージ側で MC を再接続するときは `capture:false` にし、スピーカーの音を拾わない。観客との双方向会話は、音楽の回り込み対策を設計してから足す。
 - **MCの判断**。8小節ごとに `buildMcPrompt` を送り、モデルが発話するか黙るかを決める。「話して」ボタンは強制プロンプト。
 - **Ducking**。`gemini.state === "speaking"` または `mode === "talk"` の間、音楽バスを0.28に下げる。
 - **BPM同期**。Mixamo クリップの `timeScale = bpm / クリップ本来のBPM`（0.8〜1.25）。拍の頭でライトがパルスする。
@@ -621,12 +625,16 @@ Director → Cue / ShowAction → Performance Engine → MotionSource → Retarg
 ### 起動
 
 ```bash
+pnpm install
+cd studio && pnpm install
+cd ..
 pnpm dev
-# http://localhost:5173
-# http://localhost:5173/dance.html （互換エイリアス）
+# 会話:   http://localhost:3000/
+# ダンス: http://localhost:3000/dance
+# 管理:   http://localhost:3000/studio
 ```
 
-MCを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studioが無くてもステージ操作は動く。
+会話ページを使うには `GEMINI_API_KEY` が必要。ダンスステージはキーなしでも動く。
 
 ---
 

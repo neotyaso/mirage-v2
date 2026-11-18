@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = readFileSync(path.join(rootDir, "src", "dance", "show.ts"), "utf8");
+const source = readFileSync(path.join(rootDir, "studio", "src", "dance", "show.ts"), "utf8");
 const js = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;

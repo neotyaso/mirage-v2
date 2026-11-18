@@ -5,10 +5,10 @@ import { useStatus } from "./StatusContext";
 import { Badge } from "./Badge";
 
 const TITLES: Record<string, string> = {
-  "/": "Dashboard",
-  "/vision": "Vision",
-  "/sessions": "Sessions",
-  "/settings": "Settings",
+  "/studio": "Dashboard",
+  "/studio/vision": "Vision",
+  "/studio/sessions": "Sessions",
+  "/studio/settings": "Settings",
 };
 
 export function Header() {
