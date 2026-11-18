@@ -130,6 +130,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 
 ### 3-7. UI / 運用
 
+- `/` は会話ページ（Gemini Live / S2S / マイク入力 / 字幕なし）、`/dance.html` はダンスステージとして分離する。
 - ステージ上に現在のモード、曲、BPM、セクション/style を表示する。
 - MC の発話をテキストでも表示する。
 - `dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture` のクイック操作を用意する。

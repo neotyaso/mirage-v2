@@ -1,0 +1,303 @@
+:root {
+  --talk-bg: #04050a;
+  --talk-ink: #f3f1ea;
+  --talk-dim: #7f8aa3;
+  --talk-cyan: #5ee7ff;
+  --talk-pink: #ff5fb2;
+  --talk-line: rgba(94, 231, 255, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--talk-bg);
+  color: var(--talk-ink);
+  font-family: "Helvetica Neue", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.talk {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 50% at 50% 48%, rgba(94, 231, 255, 0.08), transparent 70%),
+    radial-gradient(70% 60% at 50% 120%, rgba(255, 95, 178, 0.05), transparent 70%),
+    var(--talk-bg);
+}
+
+.talk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 4px);
+}
+
+.talk-top {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: clamp(18px, 3vw, 36px);
+}
+
+.talk-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.talk-brand-mark {
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+}
+
+.talk-brand-sub {
+  color: var(--talk-dim);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+}
+
+.talk-link {
+  color: var(--talk-dim);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-decoration: none;
+  border: 1px solid var(--talk-line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.talk-link:hover,
+.talk-link:focus-visible {
+  color: var(--talk-ink);
+  border-color: rgba(94, 231, 255, 0.5);
+  outline: none;
+}
+
+.talk-main {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: clamp(20px, 4vh, 40px);
+  padding: 24px;
+}
+
+.talk-orb {
+  --orb-a: #5ee7ff;
+  --orb-b: #1a2a6c;
+  position: relative;
+  width: clamp(200px, 42vmin, 400px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.9), transparent 9%),
+    radial-gradient(circle at 38% 32%, var(--orb-a), var(--orb-b) 48%, #04050a 78%);
+  box-shadow:
+    0 0 80px rgba(94, 231, 255, 0.18),
+    inset 0 0 60px rgba(255, 255, 255, 0.12);
+  transition: transform 90ms linear, filter 240ms ease, background 400ms ease, box-shadow 400ms ease;
+  will-change: transform;
+}
+
+.talk-orb::before {
+  content: "";
+  position: absolute;
+  inset: -9%;
+  border-radius: 50%;
+  border: 1px solid rgba(94, 231, 255, 0.16);
+}
+
+.talk-orb::after {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.talk-orb.is-idle {
+  filter: saturate(0.7);
+}
+
+.talk-orb.is-connecting {
+  filter: saturate(0.4) brightness(0.7);
+  animation: talk-breathe 1.6s ease-in-out infinite;
+}
+
+.talk-orb.is-listening {
+  --orb-a: #5ee7ff;
+  --orb-b: #102a4a;
+  box-shadow:
+    0 0 110px rgba(94, 231, 255, 0.28),
+    inset 0 0 60px rgba(255, 255, 255, 0.12);
+  animation: talk-breathe 4s ease-in-out infinite;
+}
+
+.talk-orb.is-speaking {
+  --orb-a: #ff8fd0;
+  --orb-b: #3a1450;
+  box-shadow:
+    0 0 130px rgba(255, 95, 178, 0.3),
+    inset 0 0 70px rgba(255, 255, 255, 0.16);
+}
+
+.talk-orb.is-error {
+  --orb-a: #ff6b6b;
+  --orb-b: #3a1010;
+  filter: saturate(0.6);
+}
+
+.talk-hint {
+  margin: 0;
+  color: var(--talk-dim);
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  animation: talk-fade 300ms ease both;
+}
+
+.talk-controls {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: clamp(28px, 6vh, 56px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.talk-button {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(6, 9, 18, 0.55);
+  color: var(--talk-ink);
+  padding: 13px 24px;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.talk-button:hover,
+.talk-button:focus-visible {
+  border-color: rgba(94, 231, 255, 0.6);
+  outline: none;
+}
+
+.talk-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.talk-primary {
+  border-color: rgba(94, 231, 255, 0.65);
+  background: rgba(94, 231, 255, 0.1);
+  box-shadow: 0 0 40px rgba(94, 231, 255, 0.12);
+}
+
+.talk-primary:hover,
+.talk-primary:focus-visible {
+  background: var(--talk-cyan);
+  color: #021016;
+  transform: translateY(-1px);
+}
+
+.talk-error {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: clamp(86px, 12vh, 112px);
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 48px));
+  margin: 0;
+  color: #ff9a9a;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes talk-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.12);
+  }
+}
+
+@keyframes talk-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .talk-brand-sub {
+    display: none;
+  }
+
+  .talk-orb {
+    width: clamp(180px, 58vmin, 300px);
+  }
+
+  .talk-button {
+    padding: 12px 18px;
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talk-orb,
+  .talk-orb.is-connecting,
+  .talk-orb.is-listening,
+  .talk-hint {
+    animation: none;
+    transition-duration: 0.01ms;
+  }
+}

@@ -3,6 +3,8 @@
 3D キャラクターが音楽に合わせて踊る **AI DJ ステージ**。LLM が公演の流れを考える設計だが、現在はダンス主体で MC は休止中。
 Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTransport）・身体（モーションエンジン）を別の時計で動かす** ことを核にしている。
 
+`/` は **Gemini Live と話せる会話ページ**、`/dance.html` は **ダンスステージ**。いまは別ページに分けている。
+
 > 2026-11-08 にレセプション本線を退役し、AI DJ 本線へ切り替えた（[docs/decisions.md](docs/decisions.md) D-023）。
 > 当時の受付要件は [docs/legacy/reception-requirements.md](docs/legacy/reception-requirements.md) にアーカイブしている。
 
@@ -13,8 +15,8 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 - BPM 同期、停止フェード、発話ダッキング、拍位相
 - 手動ビートグリッド（120 BPM / 先頭ダウンビート 0.987s / 60小節）と、小節頭のセクション切替（intro / drop / break / build / outro）
 - `playTrack` / `stopMusic` / `dance` の nextBar 量子化
-- Gemini Live の DJ 人格 MC（コードは残るが現在は未接続）
-- LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残るが、MC 接続は休止中
+- Gemini Live の会話ページ（`/`）。マイク入力・S2S・字幕なし
+- ダンスステージの DJ 人格 MC は未接続。LLM のツール定義（`dance` / `stop_music` / `play_track` / `walk` / `talk` / `gesture`）は残している
 - 4 style（hype / cool / cute / chill）を Mixamo のダンスクリップへマップし、BPM に `timeScale` を合わせる
 - MIRAGE ヘッダー、モード／曲／BPM／セクション/style の readout、STOP MUSIC / PLAY MUSIC、SOUND ON / OFF、モバイル対応
 - 開始前の黒背景・白文字オーバーレイ（PLEASE TURN UP THE VOLUME.）
@@ -27,12 +29,11 @@ Text-to-Motion のデモではなく、**判断（LLM）・音楽（MusicTranspo
 ```bash
 pnpm install
 pnpm dev
-# http://localhost:5173
+# 会話: http://localhost:5173/
+# ダンス: http://localhost:5173/dance.html
 ```
 
-`/dance.html` も互換エイリアスとして同じステージを開く。
-
-MC を使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studio が無くてもステージ操作は動く（MC OFFLINE 表示）。
+会話ページを使うには Studio（:3000）と `GEMINI_API_KEY` が必要。Studio が無くてもダンスステージは動く。
 
 ```bash
 cd studio && pnpm install --ignore-workspace
@@ -78,9 +79,10 @@ LLM に毎フレームの関節を出させない。身体は前の cue を続�
 
 ```
 mirage-v2/
-├── index.html                  # / の DJ ステージ
-├── dance.html                  # 互換エイリアス
+├── index.html                  # / の会話ページ
+├── dance.html                  # /dance.html のダンスステージ
 ├── src/
+│   ├── talk/                   # TalkStage（Gemini Live / 字幕なし）
 │   ├── dance/                  # DanceStage / dance核 / show / audio / mc / UI
 │   ├── hooks/
 │   │   ├── useGeminiLive.ts    # Live 接続・カスタムプロンプト／ツール
@@ -107,14 +109,15 @@ Mixamo アセットのテストは `scripts/test-mixamo.mjs`（GLB の存在・�
 ## 展示前チェックリスト
 
 1. `pnpm build` が通る。
-2. `/` で 3D ステージが起動する。
-3. 「START SESSION」で音楽とダンスが始まる。
-4. キャラクターが床に接地し、BPM に合わせてダンスがループする。
-5. SOUND ON / OFF が効く。
-6. デスクトップと縦長画面でキャラクターが画面内に収まる。
-7. MC は休止中。MC 字幕は出ず、ステージはダンスのみで動く。
-8. モバイル幅で UI が崩れない。
-9. 長時間動かしてメモリ・音切れ・タイマーのリークがない。
+2. `/` で会話ページが起動し、START で Gemini Live に接続できる。
+3. `/dance.html` で 3D ステージが起動する。
+4. 「START SESSION」で音楽とダンスが始まる。
+5. キャラクターが床に接地し、BPM に合わせてダンスがループする。
+6. SOUND ON / OFF が効く。
+7. デスクトップと縦長画面でキャラクターが画面内に収まる。
+8. ダンスステージの MC は休止中。会話ページは字幕なしで動く。
+9. モバイル幅で UI が崩れない。
+10. 長時間動かしてメモリ・音切れ・タイマーのリークがない。
 
 ## ドキュメント
 

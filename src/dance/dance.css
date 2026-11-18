@@ -74,12 +74,22 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  pointer-events: auto;
 }
 
 .dj-brand-mark {
+  color: inherit;
   font-size: clamp(18px, 2.2vw, 26px);
   font-weight: 700;
   letter-spacing: 0.32em;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.dj-brand-mark:hover,
+.dj-brand-mark:focus-visible {
+  color: var(--dj-cyan);
+  outline: none;
 }
 
 .dj-brand-sub {

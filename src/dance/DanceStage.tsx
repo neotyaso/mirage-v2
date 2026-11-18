@@ -860,7 +860,9 @@ export function DanceStage() {
 
       <header className="dj-top">
         <div className="dj-brand">
-          <span className="dj-brand-mark">MIRAGE</span>
+          <a className="dj-brand-mark" href="/">
+            MIRAGE
+          </a>
           <span className="dj-brand-sub">REAL-TIME DANCE STAGE</span>
         </div>
         <div className="dj-top-right">
