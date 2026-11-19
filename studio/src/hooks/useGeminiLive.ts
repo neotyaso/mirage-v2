@@ -516,6 +516,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
         ? `${customPrompt}\n[状況: ${context}]`
         : customPrompt
       : systemPromptWith(context);
+    const declarations = toolsRef.current ?? TOOL_DECLARATIONS;
     const session = await ai.live.connect({
       model: MODEL,
       config: {
@@ -524,7 +525,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions = {}) {
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
-        tools: [{ functionDeclarations: toolsRef.current ?? TOOL_DECLARATIONS }],
+        ...(declarations.length > 0 ? { tools: [{ functionDeclarations: declarations }] } : {}),
       },
       callbacks: {
         onopen: () => {

@@ -23,6 +23,7 @@ export function TalkStage() {
   const gemini = useGeminiLive({
     capture: true,
     systemPrompt: TALK_PROMPT,
+    tools: [],
     onError: (e) => setError(e.message),
   });
 
