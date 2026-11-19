@@ -48,7 +48,7 @@ type StageApi = {
   talk: () => void;
   dance: (input: { bpm?: number; energy?: number; style?: DanceStyle; moves?: DanceMove[] }) => void;
   gesture: (intent: string) => void;
-  generateMotion: (prompt: string, seconds?: number) => void;
+  generateMotion: (prompt: string, seconds?: number) => Promise<void>;
   getState: () => ShowState;
 };
 
@@ -75,6 +75,7 @@ export function DanceStage() {
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
   const [clipLabel, setClipLabel] = useState("IDLE");
+  const [generating, setGenerating] = useState(false);
   const [mcLine, setMcLine] = useState("");
   const [mcError, setMcError] = useState<string | null>(null);
   const [show, setShow] = useState<ShowState>({
@@ -689,26 +690,27 @@ export function DanceStage() {
       gesture: (_intent) => {
         // MC のジェスチャーは今はダンスを止めない。Live 再接続時に専用クリップを足す。
       },
-      generateMotion: (prompt, seconds = 2) => {
+      generateMotion: async (prompt, seconds = 2) => {
         const url = process.env.NEXT_PUBLIC_MOTION_URL;
-        const request = url
-          ? fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text: prompt, seconds, format: "joints" }),
-            })
-          : fetch("/motion/partlock-walk-joints.json");
-        void request
-          .then((response) => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.json();
-          })
-          .then((data) => {
-            const positions = data?.positions;
-            if (!Array.isArray(positions) || positions.length === 0) throw new Error("no positions");
-            playGenerated(positions, "GENERATED");
-          })
-          .catch((error) => console.error("generate_motion failed", error));
+        try {
+          // Modal はアイドル後に落ちる。コールドスタートは十数秒かかるので、待ちすぎたら失敗として出す。
+          const response = await (url
+            ? fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: prompt, seconds, format: "joints" }),
+                signal: AbortSignal.timeout(90_000),
+              })
+            : fetch("/motion/partlock-walk-joints.json"));
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = (await response.json()) as { positions?: number[][][] };
+          const positions = data?.positions;
+          if (!Array.isArray(positions) || positions.length === 0) throw new Error("no positions");
+          playGenerated(positions, "GENERATED");
+        } catch (error) {
+          console.error("generate_motion failed", error);
+          setClipLabel("GENERATE FAILED");
+        }
       },
       getState: () => {
         const phase = audio.getPhase();
@@ -874,11 +876,16 @@ export function DanceStage() {
           </span>
           <button
             className="dj-icon"
-            onClick={() => apiRef.current?.generateMotion("walk")}
+            onClick={async () => {
+              setGenerating(true);
+              await apiRef.current?.generateMotion("walk");
+              setGenerating(false);
+            }}
+            disabled={generating}
             aria-label="生成した歩行を再生"
             title="PartLock-CMU の生成モーション（walk）"
           >
-            GENERATE
+            {generating ? "GENERATING…" : "GENERATE"}
           </button>
           <button
             className="dj-icon"

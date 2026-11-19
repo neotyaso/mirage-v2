@@ -37,6 +37,13 @@ pnpm dev
 # Studio:  http://localhost:3000/studio
 ```
 
+初回だけ、本文取得（crawl4ai）用の Chromium を入れる。無いと `pnpm dev` の :11235 が起動に失敗する。
+
+```bash
+uv run --python 3.12 --with crawl4ai playwright install chromium
+```
+
+
 `/dance.html` は `/dance` に rewrite される。
 
 会話ページを使うには `GEMINI_API_KEY` が必要。ダンスステージはキーなしでも動く。`studio/.env.local` に `NEXT_PUBLIC_MOTION_URL` を置くと、GENERATE が Modal の PartLock を呼ぶ。未設定なら `studio/public/motion/partlock-walk-joints.json` のサンプルを再生する。

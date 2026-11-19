@@ -1,5 +1,5 @@
 // 検索・本文取得は Studio の API Route 経由（D-017）。
-// ブラウザから外部サービスは叩かない。接続先は vite.config.ts の /studio proxy。
+// ブラウザから外部サービスは叩かない。Next.js の Route Handler（/api/web/*）を経由する。
 
 export interface WebSearchResult {
   title: string;

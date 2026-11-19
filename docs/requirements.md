@@ -218,7 +218,7 @@ Mirage は、LLM が状況を考え、音楽に合わせて 3D キャラクタ�
 - [x] LLM の `dance` ツールが style / moves / energy を指定し、身体に反映される。
 - [x] Gemini Live の MC が話し、ツールで舞台を操作する。
 - [x] Studio が落ちてもステージ操作は動く。
-- [x] `pnpm build`（`tsc --noEmit && vite build`）が通る。
+- [x] `pnpm build`（`studio/` の `next build`）が通る。
 - [x] レセプションの会話 UI・2D キャラを本線から削除した。
 - [x] 旧要件・旧ロードマップを `docs/legacy/` にアーカイブした。
 

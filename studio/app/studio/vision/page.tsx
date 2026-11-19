@@ -137,7 +137,7 @@ export default function VisionPage() {
                 <span className="text-3xl">◉</span>
                 <span>Mirage からの映像を待っています</span>
                 <span className="text-xs">
-                  http://localhost:5173 を開いてカメラを許可してください
+                  http://localhost:3000 を開いてカメラを許可してください
                 </span>
               </div>
             )}

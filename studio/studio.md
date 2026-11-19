@@ -84,8 +84,8 @@ Studioを小さく動かしながら、React・TypeScript・Next.js・Gitを一�
 
 ## 構成
 
-- Mirage 本体 = このリポジトリ（Vite + React、展示PC）
-- Mirage Studio = 別の Next.js アプリ。このリポジトリの `studio/` に置く（別リポジトリに split するかは後で判断）
+- Mirage 本体 = `studio/`（Next.js、展示PC）。Vite 版は 2026-11-18 に削除した
+- Mirage Studio = 同じ Next.js アプリ内の管理ダッシュボード（`/studio`）
 - Mirage → Studio: WebSocket（状態・イベント）＋ REST（セッション・設定）。デバイストークンで認証
 - Studio → Mirage: 将来的に設定変更・操作命令（MVP では受信のみ）
 - Studio が落ちても Mirage は自律動作を継続する（最優先）
